@@ -1,0 +1,39 @@
+name: fluxer-plugin-runtime
+
+services:
+  encora-linker:
+    image: postgres:16-alpine
+    profiles: [tools]
+    entrypoint: [/bin/sh, /plugin/link-encora.sh]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: fluxer
+      PGUSER: fluxer
+      PGPASSWORD: ${POSTGRES_PASSWORD:?load the Fluxer .env with --env-file}
+    volumes:
+      - ./:/plugin:ro
+    networks: [fluxer]
+
+  encora-badges:
+    image: node:24-bookworm-slim
+    restart: unless-stopped
+    working_dir: /app
+    command: ["node", "server.js"]
+    environment:
+      PORT: "8080"
+      UPSTREAM_URL: "http://app-proxy:8080"
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: fluxer
+      PGUSER: fluxer
+      PGPASSWORD: ${POSTGRES_PASSWORD:?load the Fluxer .env with --env-file}
+      FLUXER_ADMIN_SECRET_KEY_BASE: "REDACTED_ADMIN_SECRET"
+    volumes:
+      - ./:/app
+    networks: [fluxer]
+
+networks:
+  fluxer:
+    external: true
+    name: fluxer_fluxer
