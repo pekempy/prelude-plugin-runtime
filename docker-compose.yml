@@ -1,5 +1,4 @@
-name: fluxer-plugin-runtime
-
+name: fluxer-plugins
 services:
   encora-linker:
     image: postgres:16-alpine
@@ -14,8 +13,7 @@ services:
     volumes:
       - ./:/plugin:ro
     networks: [fluxer]
-
-  encora-badges:
+  plugin-server:
     image: node:24-bookworm-slim
     restart: unless-stopped
     working_dir: /app
@@ -28,11 +26,10 @@ services:
       PGDATABASE: fluxer
       PGUSER: fluxer
       PGPASSWORD: ${POSTGRES_PASSWORD:?load the Fluxer .env with --env-file}
-      FLUXER_ADMIN_SECRET_KEY_BASE: "REDACTED_ADMIN_SECRET"
+      FLUXER_ADMIN_SECRET_KEY_BASE: ${FLUXER_ADMIN_SECRET_KEY_BASE}
     volumes:
       - ./:/app
     networks: [fluxer]
-
 networks:
   fluxer:
     external: true

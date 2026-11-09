@@ -1114,7 +1114,7 @@ const server = http.createServer(async (req, res) => {
         upstreamRes.setEncoding('utf8');
         upstreamRes.on('data', chunk => { body += chunk; });
         upstreamRes.on('end', () => {
-          const scriptTag = '<script src="/custom-badges/encora-badges.js?v=2.3.0" defer></script>';
+          const scriptTag = '<script src="/custom-badges/encora-badges.js?v=2.4.0" defer></script>';
           let modified = body;
           if (body.includes('</body>')) {
             modified = body.replace('</body>', `${scriptTag}</body>`);
