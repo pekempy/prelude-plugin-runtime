@@ -380,10 +380,13 @@
       lbl:     nativeItem ? (nativeItem.querySelector('[data-flx="user.profile-badge-settings.label"]')?.className || '') : '',
       swCont:  nativeItem ? (nativeItem.querySelector('[data-flx="ui.form.switch.container"]')?.className || '') : '',
       swRoot:  nativeItem ? (nativeItem.querySelector('[data-flx="ui.form.switch.switch-root"]')?.className || '') : '',
-      swThumb: nativeItem ? (nativeItem.querySelector('[data-flx="ui.form.switch.switch-thumb"]')?.className || '') : '',
+      swThumb:        nativeItem ? (nativeItem.querySelector('[data-flx="ui.form.switch.switch-thumb"]')?.className || '') : '',
+      iconChecked:    nativeItem ? (nativeItem.querySelector('[data-flx="ui.form.switch.icon-checked"]')?.className || '') : '',
+      iconUnchecked:  nativeItem ? (nativeItem.querySelector('[data-flx="ui.form.switch.icon-unchecked"]')?.className || '') : '',
     };
 
-    const checkSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 256 256" aria-hidden="true"><path d="M232.49,80.49l-128,128a12,12,0,0,1-17,0l-56-56a12,12,0,1,1,17-17L96,183,215.51,63.51a12,12,0,0,1,17,17Z"></path></svg>';
+    const checkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 256 256" aria-hidden="true" class="${cls.iconChecked}" data-flx="ui.form.switch.icon-checked"><path d="M232.49,80.49l-128,128a12,12,0,0,1-17,0l-56-56a12,12,0,1,1,17-17L96,183,215.51,63.51a12,12,0,0,1,17,17Z" data-flx="ui.form.switch.path"></path></svg>`;
+    const crossSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 256 256" aria-hidden="true" class="${cls.iconUnchecked}" data-flx="ui.form.switch.icon-unchecked"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z" data-flx="ui.form.switch.path"></path></svg>`;
 
     myBadges.forEach((badge, idx) => {
       const id = String(badge.id || badge.tooltip);
@@ -444,7 +447,7 @@
       thumb.setAttribute('data-state', state);
       thumb.className = cls.swThumb;
       thumb.setAttribute('data-flx', 'ui.form.switch.switch-thumb');
-      if (checked) thumb.innerHTML = checkSvg;
+      thumb.innerHTML = checked ? checkSvg : crossSvg;
       btn.appendChild(thumb);
 
       btn.addEventListener('click', () => {
@@ -455,7 +458,7 @@
         btn.setAttribute('aria-checked', String(nowChecked));
         btn.setAttribute('data-state', nowState);
         thumb.setAttribute('data-state', nowState);
-        thumb.innerHTML = nowChecked ? checkSvg : '';
+        thumb.innerHTML = nowChecked ? checkSvg : crossSvg;
       });
 
       swCont.appendChild(btn);
