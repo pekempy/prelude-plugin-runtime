@@ -8,34 +8,68 @@
   if (window.__preludeBadgesLoaded) return;
   window.__preludeBadgesLoaded = true;
 
-  // --- Native-style tooltip ---
-  let _ttEl = null;
+  // --- Native-style tooltip (steals Fluxer's tooltip class at runtime) ---
+  let _ttEl = null, _ttArrow = null;
+  function _getTooltipClass() {
+    // Find an existing Fluxer tooltip element to steal its class
+    const existing = document.querySelector('[class*="tooltip_"][class*="tooltipContent"]') ||
+                     document.querySelector('[class*="Tooltip_tooltip"]') ||
+                     document.querySelector('[class*="tooltip__"]');
+    return existing ? existing.className : null;
+  }
+  function _ensureTooltip() {
+    if (_ttEl) return;
+    _ttEl = document.createElement('div');
+    _ttEl.setAttribute('data-encora-tooltip', '');
+    // Arrow element
+    _ttArrow = document.createElement('div');
+    Object.assign(_ttArrow.style, {
+      position: 'absolute', bottom: '-4px', left: '50%', transform: 'translateX(-50%)',
+      width: '0', height: '0',
+      borderLeft: '5px solid transparent',
+      borderRight: '5px solid transparent',
+      borderTop: '5px solid var(--background-floating, #18191c)',
+    });
+    _ttEl.appendChild(_ttArrow);
+    Object.assign(_ttEl.style, {
+      position: 'fixed', zIndex: '99999', pointerEvents: 'none',
+      backgroundColor: 'var(--background-floating, #18191c)',
+      color: 'var(--header-primary, #f2f3f5)',
+      fontSize: '14px', lineHeight: '20px', fontWeight: '500',
+      padding: '8px 12px', borderRadius: '5px',
+      boxShadow: 'var(--shadow-high, 0 4px 12px rgba(0,0,0,.35))',
+      whiteSpace: 'nowrap', fontFamily: 'var(--font-primary, inherit)',
+      opacity: '0', transition: 'opacity .15s ease',
+    });
+    document.body.appendChild(_ttEl);
+  }
   function _showTooltip(text, anchor) {
-    if (!_ttEl) {
-      _ttEl = document.createElement('div');
-      _ttEl.setAttribute('data-encora-tooltip', '');
-      Object.assign(_ttEl.style, {
-        position: 'fixed', zIndex: '99999', pointerEvents: 'none',
-        backgroundColor: 'var(--background-floating, #111827)',
-        color: 'var(--text-normal, #fff)',
-        fontSize: '14px', lineHeight: '16px', fontWeight: '500',
-        padding: '8px 12px', borderRadius: '4px',
-        boxShadow: 'var(--shadow-high, 0 8px 16px rgba(0,0,0,.24))',
-        whiteSpace: 'nowrap', fontFamily: 'inherit',
-        opacity: '0', transition: 'opacity .1s',
-      });
-      document.body.appendChild(_ttEl);
-    }
-    _ttEl.textContent = text;
+    _ensureTooltip();
+    _ttEl.childNodes[0] !== _ttArrow && _ttEl.prepend(_ttArrow);
+    // Try to steal native class for pixel-perfect match
+    const nativeClass = _getTooltipClass();
+    if (nativeClass) _ttEl.className = nativeClass;
+    // Set text (after class steal since that may clear children)
+    const textNode = _ttEl.querySelector('[data-encora-text]') || (() => {
+      const n = document.createElement('span');
+      n.setAttribute('data-encora-text', '');
+      _ttEl.appendChild(n);
+      return n;
+    })();
+    textNode.textContent = text;
     _ttEl.style.display = 'block';
     requestAnimationFrame(() => {
       const r = anchor.getBoundingClientRect(), t = _ttEl.getBoundingClientRect();
-      _ttEl.style.top = Math.max(4, r.top - t.height - 8) + 'px';
-      _ttEl.style.left = Math.max(4, r.left + r.width / 2 - t.width / 2) + 'px';
+      const top = r.top - t.height - 10;
+      const left = r.left + r.width / 2 - t.width / 2;
+      _ttEl.style.top = Math.max(4, top) + 'px';
+      _ttEl.style.left = Math.max(4, Math.min(left, window.innerWidth - t.width - 4)) + 'px';
       _ttEl.style.opacity = '1';
     });
   }
-  function _hideTooltip() { if (_ttEl) { _ttEl.style.opacity = '0'; _ttEl.style.display = 'none'; } }
+  function _hideTooltip() {
+    if (_ttEl) { _ttEl.style.opacity = '0'; setTimeout(() => { if (_ttEl) _ttEl.style.display = 'none'; }, 150); }
+  }
 
   const badgeMap = new Map(); // userId -> Array<Badge>
   const usernameMap = new Map(); // lowercase username/display name -> userId
