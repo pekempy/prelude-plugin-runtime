@@ -298,25 +298,62 @@
     if (list.querySelector('[data-encora-settings-injected]')) return;
 
     let myId = _getMyUserId();
+
     if (!myId) {
-      // Walk the settings list fiber to find currentUser
+      // Fallback 1: avatar img src on the page contains userId
+      // e.g. /api/v1/users/1234567890/avatar or /avatars/1234567890/hash.webp
+      try {
+        const imgs = document.querySelectorAll('img[src*="/users/"], img[src*="/avatars/"]');
+        for (const img of imgs) {
+          const m = img.src.match(/\/(?:users|avatars)\/(\d{15,20})\//);
+          if (m && badgeMap.has(m[1])) { myId = m[1]; _cachedMyId = myId; break; }
+        }
+      } catch {}
+    }
+
+    if (!myId) {
+      // Fallback 2: scan webpack modules for auth/user store
+      try {
+        const chunks = window.webpackChunkfluxer || window.webpackChunk || [];
+        // webpack exposes require via modules cache
+        const req = window.__webpack_require__;
+        if (req?.c) {
+          for (const mod of Object.values(req.c)) {
+            const exp = mod?.exports;
+            if (!exp) continue;
+            const check = (o) => {
+              if (!o || typeof o !== 'object') return null;
+              if (o.id && typeof o.id === 'string' && /^\d{15,20}$/.test(o.id) && o.username) return o.id;
+              return null;
+            };
+            const id = check(exp) || check(exp?.default) || check(exp?.getCurrentUser?.()) || check(exp?.getUser?.());
+            if (id && badgeMap.has(id)) { myId = id; _cachedMyId = myId; break; }
+          }
+        }
+      } catch {}
+    }
+
+    if (!myId) {
+      // Fallback 3: fiber walk from list element
       try {
         const fKey = Object.keys(list).find(k => k.startsWith('__reactFiber$'));
         if (fKey) {
           let f = list[fKey]; let d = 0;
-          while (f && d++ < 60) {
+          while (f && d++ < 80) {
             const p = f.memoizedProps || {};
-            const u = p.currentUser || p.user || p.viewer;
-            if (u?.id) { myId = String(u.id); _cachedMyId = myId; break; }
-            // also check memoizedState for user stores
+            const u = p.currentUser || p.user || p.viewer || p.me;
+            if (u?.id && badgeMap.has(String(u.id))) { myId = String(u.id); _cachedMyId = myId; break; }
             const s = f.memoizedState;
-            if (s?.memoizedState?.id) { myId = String(s.memoizedState.id); _cachedMyId = myId; break; }
+            if (s?.queue === null && s?.memoizedState?.id && badgeMap.has(String(s.memoizedState.id))) {
+              myId = String(s.memoizedState.id); _cachedMyId = myId; break;
+            }
             f = f.return;
           }
         }
       } catch {}
     }
-    if (!myId) { setTimeout(injectSettingsBadges, 500); return; }
+
+    if (!myId) { setTimeout(injectSettingsBadges, 800); return; }
     const raw = badgeMap.get(String(myId));
     const myBadges = raw ? (Array.isArray(raw) ? raw : [raw]) : [];
     if (!myBadges.length) return;
