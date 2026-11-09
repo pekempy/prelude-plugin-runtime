@@ -74,6 +74,7 @@
   const badgeMap = new Map(); // userId -> Array<Badge>
   const usernameMap = new Map(); // lowercase username/display name -> userId
   let isLoaded = false;
+  let _cachedMyId = null;
 
   function remoteLog(action, details) {
     try {
@@ -259,6 +260,7 @@
 
   // --- Per-user badge visibility prefs (localStorage) ---
   function _getMyUserId() {
+    if (_cachedMyId) return _cachedMyId;
     try {
       const fiber = document.querySelector('[class*="avatar_"]')?.__reactFiber$ ||
         [...document.querySelectorAll('*')].map(el => {
@@ -744,12 +746,14 @@
   loadBadges();
   loadDiscoveryCategories();
 
-  // Dynamic user profile connection hook
   const origFetch = window.fetch;
   window.fetch = async function(...args) {
     const res = await origFetch.apply(this, args);
     try {
-      const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url);
+      const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url);
+      if (url && /\/users\/@me$/.test(url) && res.ok) {
+        res.clone().json().then(d => { if (d?.id) { _cachedMyId = String(d.id); injectSettingsBadges(); } }).catch(() => {});
+      }
       if (url && url.includes('/profile') && res.ok) {
         res.clone().json().then(data => {
           if (data && data.user && data.user.id && data.connected_accounts) {
