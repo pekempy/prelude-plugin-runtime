@@ -745,6 +745,10 @@
 
   loadBadges();
   loadDiscoveryCategories();
+  // Eagerly cache current user ID so settings injection works immediately
+  fetch('/api/v1/users/@me').then(r => r.ok ? r.json() : null).then(d => {
+    if (d?.id) { _cachedMyId = String(d.id); injectSettingsBadges(); }
+  }).catch(() => {});
 
   const origFetch = window.fetch;
   window.fetch = async function(...args) {
