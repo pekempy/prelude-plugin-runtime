@@ -291,82 +291,104 @@
 
   // --- Settings page injection ---
   function injectSettingsBadges() {
-    // Find "Profile Badges" section header in settings
-    const all = document.querySelectorAll('h3, h4, [class*="sectionTitle"], [class*="eyebrow"], [class*="label_"], [class*="title_"]');
-    const header = Array.from(all).find(el =>
-      el.textContent.trim().toLowerCase() === 'profile badges' && !el.closest('[data-encora-settings-injected]')
-    );
-    if (!header) return;
-    const section = header.closest('[class*="section"], [class*="container"], [class*="settings"], [class*="panel"]') || header.parentElement;
-    if (!section || section.querySelector('[data-encora-settings-injected]')) return;
+    if (document.querySelector('[data-encora-settings-injected]')) return;
+
+    // Find the native badge list in profile settings via multiple strategies
+    let anchor = null;
+
+    // S1: data-flx attributes
+    anchor = document.querySelector('[data-flx*="profile"][data-flx*="badge"], [data-flx*="my_profile"][data-flx*="badge"]');
+
+    // S2: text content match for "profile badges" heading
+    if (!anchor) {
+      const el = Array.from(document.querySelectorAll('*')).find(e =>
+        e.children.length === 0 && /profile.{0,5}badge/i.test(e.textContent.trim()) && e.textContent.trim().length < 40
+      );
+      if (el) anchor = el.closest('[class]') || el.parentElement;
+    }
+
+    // S3: container holding native badge img + toggle (Prelude Staff row)
+    if (!anchor) {
+      for (const img of document.querySelectorAll('img')) {
+        const src = img.src || '';
+        if (!src.includes('/badge') && !img.alt?.toLowerCase().includes('badge')) continue;
+        const row = img.closest('[class*="row"], [class*="item"], [class*="badge"], [class*="entry"]');
+        if (row) { anchor = row.parentElement; break; }
+      }
+    }
+
+    // S4: any role=switch near an img in a settings context
+    if (!anchor) {
+      for (const sw of document.querySelectorAll('[role="switch"]')) {
+        const p = sw.closest('[class*="settings"], [class*="layer"], [class*="sidebar"]');
+        if (p && p.querySelector('img')) { anchor = sw.parentElement.parentElement; break; }
+      }
+    }
+
+    if (!anchor) return;
 
     const myId = _getMyUserId();
     if (!myId) return;
-    const myBadges = getBadgesForUser(myId);
+    const raw = badgeMap.get(String(myId));
+    const myBadges = raw ? (Array.isArray(raw) ? raw : [raw]) : [];
     if (!myBadges.length) return;
 
-    const wrap = document.createElement('div');
-    wrap.setAttribute('data-encora-settings-injected', '');
-    Object.assign(wrap.style, { marginTop: '16px' });
+    const section = document.createElement('div');
+    section.setAttribute('data-encora-settings-injected', '');
+    Object.assign(section.style, { marginTop: '20px' });
 
-    const title = document.createElement('div');
+    const title = document.createElement('h5');
     title.textContent = 'Custom Badges';
     Object.assign(title.style, {
       fontSize: '12px', fontWeight: '700', textTransform: 'uppercase',
-      letterSpacing: '.02em', marginBottom: '8px',
-      color: 'var(--header-secondary, #b5bac1)',
+      letterSpacing: '.02em', margin: '0 0 8px', color: 'var(--header-secondary, #b5bac1)',
     });
-    wrap.appendChild(title);
+    section.appendChild(title);
 
     myBadges.forEach(badge => {
+      const id = String(badge.id || badge.tooltip);
       const row = document.createElement('div');
-      row.setAttribute('data-encora-badge-row', badge.id || badge.tooltip);
       Object.assign(row.style, {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '8px 0', borderBottom: '1px solid var(--background-modifier-accent, rgba(255,255,255,.06))',
       });
-
       const left = document.createElement('div');
       Object.assign(left.style, { display: 'flex', alignItems: 'center', gap: '10px' });
       const img = document.createElement('img');
       img.src = `/custom-badges/image-proxy?url=${encodeURIComponent(badge.icon || badge.url || '')}`;
       Object.assign(img.style, { width: '20px', height: '20px', objectFit: 'contain', borderRadius: '3px' });
-      const label = document.createElement('span');
-      label.textContent = badge.tooltip || badge.name || 'Badge';
-      Object.assign(label.style, { fontSize: '14px', color: 'var(--text-normal, #dbdee1)' });
-      left.appendChild(img); left.appendChild(label);
+      const lbl = document.createElement('span');
+      lbl.textContent = badge.tooltip || badge.name || 'Badge';
+      Object.assign(lbl.style, { fontSize: '14px', color: 'var(--text-normal, #dbdee1)' });
+      left.append(img, lbl);
 
-      // Toggle switch
-      const hidden = _isBadgeHidden(badge.id || badge.tooltip);
+      const isHidden = _isBadgeHidden(id);
       const toggle = document.createElement('div');
       toggle.setAttribute('role', 'switch');
-      toggle.setAttribute('aria-checked', String(!hidden));
+      toggle.setAttribute('aria-checked', String(!isHidden));
       Object.assign(toggle.style, {
-        width: '40px', height: '24px', borderRadius: '12px', cursor: 'pointer',
-        backgroundColor: hidden ? 'var(--button-secondary-background, #4e5058)' : 'var(--button-positive-background, #248046)',
+        width: '40px', height: '24px', borderRadius: '12px', cursor: 'pointer', flexShrink: '0',
+        backgroundColor: isHidden ? 'var(--button-secondary-background,#4e5058)' : 'var(--button-positive-background,#248046)',
         position: 'relative', transition: 'background-color .15s',
-        flexShrink: '0',
       });
       const knob = document.createElement('div');
       Object.assign(knob.style, {
-        position: 'absolute', top: '3px', width: '18px', height: '18px',
-        borderRadius: '50%', backgroundColor: '#fff',
-        left: hidden ? '3px' : '19px', transition: 'left .15s',
+        position: 'absolute', top: '3px', borderRadius: '50%', backgroundColor: '#fff',
+        width: '18px', height: '18px', left: isHidden ? '3px' : '19px', transition: 'left .15s',
       });
       toggle.appendChild(knob);
       toggle.addEventListener('click', () => {
-        _toggleBadgeHidden(badge.id || badge.tooltip);
-        const nowHidden = _isBadgeHidden(badge.id || badge.tooltip);
-        toggle.style.backgroundColor = nowHidden ? 'var(--button-secondary-background, #4e5058)' : 'var(--button-positive-background, #248046)';
+        _toggleBadgeHidden(id);
+        const nowHidden = _isBadgeHidden(id);
+        toggle.style.backgroundColor = nowHidden ? 'var(--button-secondary-background,#4e5058)' : 'var(--button-positive-background,#248046)';
         knob.style.left = nowHidden ? '3px' : '19px';
         toggle.setAttribute('aria-checked', String(!nowHidden));
       });
-
-      row.appendChild(left); row.appendChild(toggle);
-      wrap.appendChild(row);
+      row.append(left, toggle);
+      section.appendChild(row);
     });
 
-    section.appendChild(wrap);
+    anchor.insertAdjacentElement('afterend', section);
   }
 
   function createBadgeElement(badge, container) {
