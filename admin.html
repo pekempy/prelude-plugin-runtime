@@ -356,6 +356,7 @@
   <script>
     let currentTab = 'badges';
     let currentBadgeId = null;
+    let loadedBadges = [];
     let cachedAssignedUsers = [];
     let searchDebounce = null;
 
@@ -393,6 +394,7 @@
       try {
         const res = await fetch('/admin/plugins/api/badges/list');
         const badges = await res.json();
+        loadedBadges = badges;
         
         if (!badges.length) {
           grid.innerHTML = '<div class="col-span-full p-8 text-center text-sm text-neutral-500">No badges configured yet.</div>';
@@ -415,7 +417,7 @@
               <button onclick="viewBadgeDetail('${b.id}')" class="flex-1 rounded-md border border-neutral-300 bg-white py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 shadow-sm transition-colors">
                 Manage Users (${b.userCount}) →
               </button>
-              <button onclick="openEditBadgeModal(${JSON.stringify(b)})" class="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 shadow-sm transition-colors" title="Edit badge">✏️</button>
+              <button onclick="openEditBadgeModal('${b.id}')" class="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 shadow-sm transition-colors" title="Edit badge">✏️</button>
             </div>
           </div>
         `).join('');
@@ -448,7 +450,9 @@
       }
     }
 
-    function openEditBadgeModal(b) {
+    function openEditBadgeModal(id) {
+      const b = loadedBadges.find(x => x.id === id);
+      if (!b) return;
       document.getElementById('edit-badge-id').value = b.id;
       document.getElementById('edit-badge-name').value = b.name || '';
       document.getElementById('edit-badge-icon').value = b.icon || '';
