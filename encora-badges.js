@@ -447,7 +447,7 @@
       thumb.setAttribute('data-state', state);
       thumb.className = cls.swThumb;
       thumb.setAttribute('data-flx', 'ui.form.switch.switch-thumb');
-      thumb.innerHTML = checked ? checkSvg : crossSvg;
+      thumb.innerHTML = checkSvg + crossSvg;
       btn.appendChild(thumb);
 
       btn.addEventListener('click', () => {
@@ -458,7 +458,6 @@
         btn.setAttribute('aria-checked', String(nowChecked));
         btn.setAttribute('data-state', nowState);
         thumb.setAttribute('data-state', nowState);
-        thumb.innerHTML = nowChecked ? checkSvg : crossSvg;
       });
 
       swCont.appendChild(btn);
@@ -855,6 +854,11 @@
     remoteLog,
     injectSettings: injectSettingsBadges,
     get cachedMyId() { return _cachedMyId; },
+    clearPrefs() {
+      const k = _badgePrefsKey();
+      if (k) { _hiddenMem.delete(k); try { (window.localStorage || localStorage).removeItem(k); } catch {} }
+      console.log('[encora-badges] Hidden badge prefs cleared');
+    },
   };
 
 })();
