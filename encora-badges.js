@@ -8,6 +8,35 @@
   if (window.__preludeBadgesLoaded) return;
   window.__preludeBadgesLoaded = true;
 
+  // --- Native-style tooltip ---
+  let _ttEl = null;
+  function _showTooltip(text, anchor) {
+    if (!_ttEl) {
+      _ttEl = document.createElement('div');
+      _ttEl.setAttribute('data-encora-tooltip', '');
+      Object.assign(_ttEl.style, {
+        position: 'fixed', zIndex: '99999', pointerEvents: 'none',
+        backgroundColor: 'var(--background-floating, #111827)',
+        color: 'var(--text-normal, #fff)',
+        fontSize: '14px', lineHeight: '16px', fontWeight: '500',
+        padding: '8px 12px', borderRadius: '4px',
+        boxShadow: 'var(--shadow-high, 0 8px 16px rgba(0,0,0,.24))',
+        whiteSpace: 'nowrap', fontFamily: 'inherit',
+        opacity: '0', transition: 'opacity .1s',
+      });
+      document.body.appendChild(_ttEl);
+    }
+    _ttEl.textContent = text;
+    _ttEl.style.display = 'block';
+    requestAnimationFrame(() => {
+      const r = anchor.getBoundingClientRect(), t = _ttEl.getBoundingClientRect();
+      _ttEl.style.top = Math.max(4, r.top - t.height - 8) + 'px';
+      _ttEl.style.left = Math.max(4, r.left + r.width / 2 - t.width / 2) + 'px';
+      _ttEl.style.opacity = '1';
+    });
+  }
+  function _hideTooltip() { if (_ttEl) { _ttEl.style.opacity = '0'; _ttEl.style.display = 'none'; } }
+
   const badgeMap = new Map(); // userId -> Array<Badge>
   const usernameMap = new Map(); // lowercase username/display name -> userId
   let isLoaded = false;
@@ -197,7 +226,8 @@
     }
     a.setAttribute('data-encora-badge', 'true');
     a.setAttribute('data-badge-id', badge.id || 'custom');
-    a.title = badge.tooltip || badge.name || 'Badge';
+    a.addEventListener('mouseenter', () => _showTooltip(badge.tooltip || badge.name || 'Badge', a));
+    a.addEventListener('mouseleave', _hideTooltip);
     a.className = 'FocusRing_focusRing___rKjT link___y9d1D';
     Object.assign(a.style, {
       display: 'inline-flex',
