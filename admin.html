@@ -281,6 +281,39 @@
     </div>
   </div>
 
+  <!-- MODAL: EDIT BADGE -->
+  <div id="edit-badge-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
+      <h3 class="text-lg font-bold text-neutral-900">Edit Badge</h3>
+      <input type="hidden" id="edit-badge-id">
+      <div class="space-y-3 text-sm">
+        <div>
+          <label class="block text-xs font-medium text-neutral-700 mb-1">Badge Name</label>
+          <input type="text" id="edit-badge-name" class="w-full rounded border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-900">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-neutral-700 mb-1">Icon URL</label>
+          <div class="flex gap-2 items-center">
+            <input type="text" id="edit-badge-icon" class="flex-1 rounded border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-900" oninput="document.getElementById('edit-icon-preview').src=this.value">
+            <img id="edit-icon-preview" src="" class="w-8 h-8 object-contain rounded border border-neutral-200 p-0.5">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-neutral-700 mb-1">Description</label>
+          <input type="text" id="edit-badge-desc" class="w-full rounded border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-900">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-neutral-700 mb-1">Default Link (optional)</label>
+          <input type="text" id="edit-badge-link" class="w-full rounded border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-900">
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModal('edit-badge-modal')" class="px-4 py-2 rounded text-sm text-neutral-600 hover:bg-neutral-100">Cancel</button>
+        <button onclick="submitEditBadge()" class="px-4 py-2 rounded text-sm bg-neutral-900 text-white font-medium hover:bg-neutral-800">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: CREATE CATEGORY -->
   <div id="create-category-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
     <div class="bg-white rounded-lg shadow-xl max-w-sm w-full p-6 space-y-4">
@@ -378,9 +411,12 @@
                 <p class="text-xs text-neutral-500 mt-1 line-clamp-2">${escapeHtml(b.description || 'No description')}</p>
               </div>
             </div>
-            <button onclick="viewBadgeDetail('${b.id}')" class="w-full rounded-md border border-neutral-300 bg-white py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 shadow-sm transition-colors">
-              Manage Users (${b.userCount}) →
-            </button>
+            <div class="flex gap-2">
+              <button onclick="viewBadgeDetail('${b.id}')" class="flex-1 rounded-md border border-neutral-300 bg-white py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 shadow-sm transition-colors">
+                Manage Users (${b.userCount}) →
+              </button>
+              <button onclick="openEditBadgeModal(${JSON.stringify(b)})" class="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 shadow-sm transition-colors" title="Edit badge">✏️</button>
+            </div>
           </div>
         `).join('');
       } catch (err) {
@@ -410,6 +446,33 @@
       } catch (err) {
         alert('Failed to load badge details: ' + err.message);
       }
+    }
+
+    function openEditBadgeModal(b) {
+      document.getElementById('edit-badge-id').value = b.id;
+      document.getElementById('edit-badge-name').value = b.name || '';
+      document.getElementById('edit-badge-icon').value = b.icon || '';
+      document.getElementById('edit-icon-preview').src = b.icon || '';
+      document.getElementById('edit-badge-desc').value = b.description || '';
+      document.getElementById('edit-badge-link').value = b.defaultLink || '';
+      document.getElementById('edit-badge-modal').classList.remove('hidden');
+    }
+    async function submitEditBadge() {
+      const id = document.getElementById('edit-badge-id').value;
+      const name = document.getElementById('edit-badge-name').value.trim();
+      const icon = document.getElementById('edit-badge-icon').value.trim();
+      const desc = document.getElementById('edit-badge-desc').value.trim();
+      const link = document.getElementById('edit-badge-link').value.trim();
+      if (!name || !icon) { alert('Name and Icon URL are required'); return; }
+      try {
+        const res = await fetch('/admin/plugins/api/badges/create', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, name, icon, description: desc, defaultLink: link })
+        });
+        const data = await res.json();
+        if (data.success) { closeModal('edit-badge-modal'); loadBadgesCatalog(); }
+        else alert('Failed: ' + (data.error || 'Unknown error'));
+      } catch (err) { alert('Error: ' + err.message); }
     }
 
     function backToCatalog() {
