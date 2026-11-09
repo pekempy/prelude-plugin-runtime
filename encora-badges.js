@@ -297,13 +297,26 @@
     if (!list) return;
     if (list.querySelector('[data-encora-settings-injected]')) return;
 
-    const myId = _getMyUserId();
+    let myId = _getMyUserId();
     if (!myId) {
-      // ID not ready yet — retry once it arrives
-      setTimeout(injectSettingsBadges, 300);
-      setTimeout(injectSettingsBadges, 1000);
-      return;
+      // Walk the settings list fiber to find currentUser
+      try {
+        const fKey = Object.keys(list).find(k => k.startsWith('__reactFiber$'));
+        if (fKey) {
+          let f = list[fKey]; let d = 0;
+          while (f && d++ < 60) {
+            const p = f.memoizedProps || {};
+            const u = p.currentUser || p.user || p.viewer;
+            if (u?.id) { myId = String(u.id); _cachedMyId = myId; break; }
+            // also check memoizedState for user stores
+            const s = f.memoizedState;
+            if (s?.memoizedState?.id) { myId = String(s.memoizedState.id); _cachedMyId = myId; break; }
+            f = f.return;
+          }
+        }
+      } catch {}
     }
+    if (!myId) { setTimeout(injectSettingsBadges, 500); return; }
     const raw = badgeMap.get(String(myId));
     const myBadges = raw ? (Array.isArray(raw) ? raw : [raw]) : [];
     if (!myBadges.length) return;
@@ -750,12 +763,6 @@
 
   loadBadges();
   loadDiscoveryCategories();
-  // Eagerly cache current user ID so settings injection works immediately
-  fetch('/api/v1/users/@me').then(r => r.ok ? r.json() : null).then(d => {
-    const id = d?.id || d?.user?.id;
-    if (id) { _cachedMyId = String(id); injectSettingsBadges(); }
-    else console.warn('[encora-badges] /users/@me no id:', d);
-  }).catch(() => {});
 
   const origFetch = window.fetch;
   window.fetch = async function(...args) {
