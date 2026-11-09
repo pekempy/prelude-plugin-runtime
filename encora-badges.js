@@ -283,8 +283,19 @@
     return null;
   }
   function _badgePrefsKey() { const uid = _getMyUserId(); return uid ? `encora_badge_hidden_${uid}` : null; }
-  function _getHidden() { try { const k = _badgePrefsKey(); return k ? JSON.parse(localStorage.getItem(k) || '[]') : []; } catch { return []; } }
-  function _setHidden(arr) { try { const k = _badgePrefsKey(); if (k) localStorage.setItem(k, JSON.stringify(arr)); } catch {} }
+  const _hiddenMem = new Map(); // in-memory fallback when localStorage unavailable
+  function _getHidden() {
+    const k = _badgePrefsKey();
+    if (!k) return [];
+    try { return JSON.parse((window.localStorage || localStorage).getItem(k) || '[]'); } catch {}
+    return _hiddenMem.get(k) || [];
+  }
+  function _setHidden(arr) {
+    const k = _badgePrefsKey();
+    if (!k) return;
+    _hiddenMem.set(k, arr);
+    try { (window.localStorage || localStorage).setItem(k, JSON.stringify(arr)); } catch {}
+  }
   function _isBadgeHidden(badgeId) { return _getHidden().includes(String(badgeId)); }
   function _toggleBadgeHidden(badgeId) {
     const h = _getHidden(), id = String(badgeId);
@@ -427,7 +438,7 @@
       btn.id = uid;
       btn.className = cls.swRoot;
       btn.setAttribute('data-flx', 'ui.form.switch.switch-root');
-      btn.setAttribute('aria-label', `Show ${labelText.textContent} on your profile`);
+      btn.setAttribute('data-focus-ring-managed', 'true');
 
       const thumb = document.createElement('span');
       thumb.setAttribute('data-state', state);
@@ -656,9 +667,10 @@
       // Remove previously injected badges
       container.querySelectorAll('[data-encora-badge]').forEach(el => el.remove());
 
+      const editBtn = container.querySelector('[data-flx*="edit-button"], [class*="editButton"]');
       for (const badge of badges) {
         const badgeEl = createBadgeElement(badge, container);
-        container.appendChild(badgeEl);
+        editBtn ? container.insertBefore(badgeEl, editBtn) : container.appendChild(badgeEl);
       }
       remoteLog('BADGES_INJECTED_INTO_EXISTING', { userId, count: badges.length });
     });
