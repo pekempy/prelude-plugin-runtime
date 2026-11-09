@@ -371,18 +371,23 @@
 
     // Steal classes from the native item for pixel-perfect match
     const nativeItem = list.querySelector('[data-flx="user.profile-badge-settings.item"]');
+    // Use getAttribute('class') — SVG .className returns SVGAnimatedString, not a string
+    const gc = (el) => el?.getAttribute('class') || '';
     const cls = {
       item:    nativeItem ? nativeItem.className : '',
-      row:     nativeItem ? (nativeItem.querySelector('[data-flx="user.profile-badge-settings.row"]')?.className || '') : '',
-      label:   nativeItem ? (nativeItem.querySelector('[data-flx="user.profile-badge-settings.row-label"]')?.className || '') : '',
-      artSlot: nativeItem ? (nativeItem.querySelector('[data-flx="user.profile-badge-settings.art-slot"]')?.className || '') : '',
-      art:     nativeItem ? (nativeItem.querySelector('[data-flx="user.profile-badge-settings.art"]')?.className || '') : '',
-      lbl:     nativeItem ? (nativeItem.querySelector('[data-flx="user.profile-badge-settings.label"]')?.className || '') : '',
-      swCont:  nativeItem ? (nativeItem.querySelector('[data-flx="ui.form.switch.container"]')?.className || '') : '',
-      swRoot:  nativeItem ? (nativeItem.querySelector('[data-flx="ui.form.switch.switch-root"]')?.className || '') : '',
-      swThumb:        nativeItem ? (nativeItem.querySelector('[data-flx="ui.form.switch.switch-thumb"]')?.className || '') : '',
-      iconChecked:    nativeItem ? (nativeItem.querySelector('[data-flx="ui.form.switch.icon-checked"]')?.className || '') : '',
-      iconUnchecked:  nativeItem ? (nativeItem.querySelector('[data-flx="ui.form.switch.icon-unchecked"]')?.className || '') : '',
+      row:     gc(nativeItem?.querySelector('[data-flx="user.profile-badge-settings.row"]')),
+      label:   gc(nativeItem?.querySelector('[data-flx="user.profile-badge-settings.row-label"]')),
+      artSlot: gc(nativeItem?.querySelector('[data-flx="user.profile-badge-settings.art-slot"]')),
+      art:     gc(nativeItem?.querySelector('[data-flx="user.profile-badge-settings.art"]')),
+      lbl:     gc(nativeItem?.querySelector('[data-flx="user.profile-badge-settings.label"]')),
+      swCont:  gc(nativeItem?.querySelector('[data-flx="ui.form.switch.container"]')),
+      swRoot:  gc(nativeItem?.querySelector('[data-flx="ui.form.switch.switch-root"]')),
+      swThumb: gc(nativeItem?.querySelector('[data-flx="ui.form.switch.switch-thumb"]')),
+      get iconChecked()   { return gc(nativeItem?.querySelector('[data-flx="ui.form.switch.icon-checked"]')); },
+      get iconUnchecked() {
+        const c = gc(nativeItem?.querySelector('[data-flx="ui.form.switch.icon-unchecked"]'));
+        return c || this.iconChecked.replace('iconChecked', 'iconUnchecked');
+      },
     };
 
     const checkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 256 256" aria-hidden="true" class="${cls.iconChecked}" data-flx="ui.form.switch.icon-checked"><path d="M232.49,80.49l-128,128a12,12,0,0,1-17,0l-56-56a12,12,0,1,1,17-17L96,183,215.51,63.51a12,12,0,0,1,17,17Z" data-flx="ui.form.switch.path"></path></svg>`;
@@ -857,7 +862,11 @@
     clearPrefs() {
       const k = _badgePrefsKey();
       if (k) { _hiddenMem.delete(k); try { (window.localStorage || localStorage).removeItem(k); } catch {} }
-      console.log('[encora-badges] Hidden badge prefs cleared');
+      // Remove injected items so injectSettingsBadges can re-run with clean state
+      document.querySelectorAll('[data-encora-settings-injected]').forEach(el => el.remove());
+      injectSettingsBadges();
+      processAll();
+      console.log('[encora-badges] Prefs cleared and badges reinjected');
     },
   };
 
