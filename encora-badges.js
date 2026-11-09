@@ -452,7 +452,7 @@
       thumb.setAttribute('data-state', state);
       thumb.className = cls.swThumb;
       thumb.setAttribute('data-flx', 'ui.form.switch.switch-thumb');
-      thumb.innerHTML = checkSvg + crossSvg;
+      thumb.innerHTML = checked ? checkSvg : crossSvg;
       btn.appendChild(thumb);
 
       btn.addEventListener('click', () => {
@@ -463,6 +463,7 @@
         btn.setAttribute('aria-checked', String(nowChecked));
         btn.setAttribute('data-state', nowState);
         thumb.setAttribute('data-state', nowState);
+        thumb.innerHTML = nowChecked ? checkSvg : crossSvg;
       });
 
       swCont.appendChild(btn);
@@ -860,13 +861,16 @@
     injectSettings: injectSettingsBadges,
     get cachedMyId() { return _cachedMyId; },
     clearPrefs() {
-      const k = _badgePrefsKey();
-      if (k) { _hiddenMem.delete(k); try { (window.localStorage || localStorage).removeItem(k); } catch {} }
-      // Remove injected items so injectSettingsBadges can re-run with clean state
+      // Nuclear: wipe ALL encora badge hidden keys regardless of cached ID
+      try {
+        const ls = window.localStorage;
+        Object.keys(ls).filter(k => k.startsWith('encora_badge_hidden_')).forEach(k => { ls.removeItem(k); _hiddenMem.delete(k); });
+      } catch {}
+      _hiddenMem.forEach((_, k) => { if (k.startsWith('encora_badge_hidden_')) _hiddenMem.delete(k); });
       document.querySelectorAll('[data-encora-settings-injected]').forEach(el => el.remove());
       injectSettingsBadges();
       processAll();
-      console.log('[encora-badges] Prefs cleared and badges reinjected');
+      console.log('[encora-badges] All hidden badge prefs cleared');
     },
   };
 
