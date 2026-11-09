@@ -298,7 +298,12 @@
     if (list.querySelector('[data-encora-settings-injected]')) return;
 
     const myId = _getMyUserId();
-    if (!myId) return;
+    if (!myId) {
+      // ID not ready yet — retry once it arrives
+      setTimeout(injectSettingsBadges, 300);
+      setTimeout(injectSettingsBadges, 1000);
+      return;
+    }
     const raw = badgeMap.get(String(myId));
     const myBadges = raw ? (Array.isArray(raw) ? raw : [raw]) : [];
     if (!myBadges.length) return;
@@ -747,7 +752,9 @@
   loadDiscoveryCategories();
   // Eagerly cache current user ID so settings injection works immediately
   fetch('/api/v1/users/@me').then(r => r.ok ? r.json() : null).then(d => {
-    if (d?.id) { _cachedMyId = String(d.id); injectSettingsBadges(); }
+    const id = d?.id || d?.user?.id;
+    if (id) { _cachedMyId = String(id); injectSettingsBadges(); }
+    else console.warn('[encora-badges] /users/@me no id:', d);
   }).catch(() => {});
 
   const origFetch = window.fetch;
@@ -756,7 +763,7 @@
     try {
       const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url);
       if (url && /\/users\/@me$/.test(url) && res.ok) {
-        res.clone().json().then(d => { if (d?.id) { _cachedMyId = String(d.id); injectSettingsBadges(); } }).catch(() => {});
+        res.clone().json().then(d => { const id = d?.id||d?.user?.id; if (id) { _cachedMyId = String(id); injectSettingsBadges(); } }).catch(() => {});
       }
       if (url && url.includes('/profile') && res.ok) {
         res.clone().json().then(data => {
@@ -786,7 +793,9 @@
     badgeMap,
     usernameMap,
     processAll,
-    remoteLog
+    remoteLog,
+    injectSettings: injectSettingsBadges,
+    get cachedMyId() { return _cachedMyId; },
   };
 
 })();
