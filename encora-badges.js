@@ -306,7 +306,6 @@
   function injectSettingsBadges() {
     const list = document.querySelector('[data-flx="user.profile-badge-settings.list"]');
     if (!list) return;
-    if (list.querySelector('[data-encora-settings-injected]')) return;
 
     let myId = _getMyUserId();
 
@@ -368,6 +367,12 @@
     const raw = badgeMap.get(String(myId));
     const myBadges = raw ? (Array.isArray(raw) ? raw : [raw]) : [];
     if (!myBadges.length) return;
+
+    // Dedup: only skip if injected count already matches expected count
+    const existing = list.querySelectorAll('[data-encora-settings-injected]');
+    if (existing.length === myBadges.length) return;
+    existing.forEach(el => el.remove());
+
 
     // Steal classes from the native item for pixel-perfect match
     const nativeItem = list.querySelector('[data-flx="user.profile-badge-settings.item"]');
