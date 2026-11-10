@@ -607,7 +607,6 @@ const server = http.createServer(async (req, res) => {
     let cleanBuf = bodyBuf;
     try {
       const reqJson = JSON.parse(bodyBuf.toString('utf8'));
-      console.log(`[preview-proxy] body: ${bodyBuf.toString("utf8").slice(0,300)}`);
       if (Array.isArray(reqJson.hidden_profile_badges) && previewUserId) {
         const badgesMap0 = await refreshBadgesCache();
         const customKeys = new Set((badgesMap0.get(previewUserId) || []).map(b => b.id));
