@@ -38,20 +38,25 @@ async function _resolveUserId(authHeader, apiUrl) {
   if (cached && Date.now() - cached.ts < AUTH_CACHE_TTL) return cached.userId;
   try {
     const apiHost = new URL(apiUrl);
-    const meRes = await new Promise((resolve, reject) => {
-      const r = http.request({ hostname: apiHost.hostname, port: parseInt(apiHost.port||'80',10),
-        path: '/users/@me', method: 'GET',
-        headers: { 'authorization': authHeader, host: apiHost.host, 'accept-encoding': 'identity' },
-      }, resolve);
-      r.on('error', reject); r.end();
-    });
-    let meBody = '';
-    meRes.setEncoding('utf8');
-    await new Promise(r => { meRes.on('data', c => meBody+=c); meRes.on('end', r); });
-    const me = JSON.parse(meBody);
-    const userId = String(me?.id || me?.user?.id || '');
-    if (userId) _authUserCache.set(h, { userId, ts: Date.now() });
-    return userId || null;
+    // Try /v1/users/@me first, fallback to /users/@me
+    for (const mePath of ['/v1/users/@me', '/users/@me']) {
+      const meRes = await new Promise((resolve, reject) => {
+        const r = http.request({ hostname: apiHost.hostname, port: parseInt(apiHost.port||'80',10),
+          path: mePath, method: 'GET',
+          headers: { 'authorization': authHeader, host: apiHost.host, 'accept-encoding': 'identity' },
+        }, resolve);
+        r.on('error', reject); r.end();
+      });
+      let meBody = '';
+      meRes.setEncoding('utf8');
+      await new Promise(r => { meRes.on('data', c => meBody+=c); meRes.on('end', r); });
+      if (meRes.statusCode === 200) {
+        const me = JSON.parse(meBody);
+        const userId = String(me?.id || me?.user?.id || '');
+        if (userId) { _authUserCache.set(h, { userId, ts: Date.now() }); return userId; }
+      }
+    }
+    return null;
   } catch { return null; }
 }
 
@@ -577,6 +582,7 @@ const server = http.createServer(async (req, res) => {
   // --- Preview proxy: inject custom badges into POST /api(.../v1)?/users/@me/profile-badges/preview ---
   const previewMatch = req.method === 'POST' && /^\/api(?:\/v\d+)?\/users\/@me\/profile-badges\/preview$/.test(pathname);
   if (previewMatch) {
+    console.log(`[preview-proxy] ${req.method} ${pathname}`);
     const API_URL = process.env.API_URL || 'http://api:8080';
     const CADDY_INTERNAL = process.env.CADDY_INTERNAL_URL || 'http://caddy:8088';
     const caddyHost = new URL(CADDY_INTERNAL);
@@ -591,6 +597,7 @@ const server = http.createServer(async (req, res) => {
 
     // Resolve userId (cached — no extra round trip after first request)
     const previewUserId = await _resolveUserId(req.headers['authorization'] || '', API_URL);
+    console.log(`[preview-proxy] userId=${previewUserId}`);
 
     // Load persisted hidden state for this user's custom badges
     const hiddenState = previewUserId ? await _getCustomHidden(previewUserId) : new Map();
@@ -629,6 +636,7 @@ const server = http.createServer(async (req, res) => {
         proxyReq.end(cleanBuf);
       });
 
+      console.log(`[preview-proxy] upstream status=${upstreamRes.statusCode}`);
       if (upstreamRes.statusCode !== 200) {
         let errBody = '';
         upstreamRes.setEncoding('utf8');
