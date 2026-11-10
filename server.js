@@ -536,14 +536,22 @@ const server = http.createServer(async (req, res) => {
     // Decode user ID from JWT without verifying signature
     let previewUserId = null;
     try {
-      const auth = req.headers['authorization'] || '';
-      const token = auth.replace(/^Bearer\s+/i, '').trim();
-      if (token && token.includes('.')) {
-        const payload = JSON.parse(Buffer.from(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'), 'base64').toString('utf8'));
-        previewUserId = String(payload.sub || payload.id || payload.user_id || '');
-      }
-    } catch (e) { console.log(`[preview-proxy] JWT decode error: ${e.message}`); }
-    console.log(`[preview-proxy] decoded userId=${previewUserId}`);
+      const meRes = await new Promise((resolve, reject) => {
+        const apiHost = new URL(API_URL);
+        const r = http.request({
+          hostname: apiHost.hostname, port: parseInt(apiHost.port||'80',10),
+          path: '/users/@me', method: 'GET',
+          headers: { ...req.headers, host: apiHost.host, 'accept-encoding': 'identity' },
+        }, resolve);
+        r.on('error', reject); r.end();
+      });
+      let meBody = '';
+      meRes.setEncoding('utf8');
+      await new Promise(r => { meRes.on('data', c => meBody+=c); meRes.on('end', r); });
+      const me = JSON.parse(meBody);
+      previewUserId = String(me?.id || me?.user?.id || '');
+    } catch (e) { console.log(`[preview-proxy] /users/@me error: ${e.message}`); }
+    console.log(`[preview-proxy] resolved userId=${previewUserId}`);
 
     // Collect request body to forward
     const bodyBuf = await new Promise((resolve) => {
