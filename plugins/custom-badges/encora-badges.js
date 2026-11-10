@@ -252,6 +252,52 @@
       console.warn('[encora] Discovery category sync error:', e);
     }
     if (!isLoaded) return;
+    try {
+      injectBadgesIntoProfileCards();
+    } catch (e) {
+      console.warn('[encora] Profile card badge injection error:', e);
+    }
+  }
+
+  // --- Profile card (preview popout) badge injection ---
+  // The preview card uses cached React state, not a fresh profile fetch, so the backend
+  // injection doesn't reach it. We inject directly into the badge container.
+  function injectBadgesIntoProfileCards() {
+    const containers = document.querySelectorAll(
+      '[data-flx="user.profile.profile-card.profile-card-user-info.badge-container"]'
+    );
+    for (const container of containers) {
+      if (container.dataset.encoraInjected) continue;
+      // User ID lives on the avatar element within the same card
+      const card = container.closest('[data-flx="user.profile.profile-card.profile-card-layout.profile-card"]');
+      if (!card) continue;
+      const avatarEl = card.querySelector('[data-flx-user-id]');
+      if (!avatarEl) continue;
+      const userId = avatarEl.dataset.flxUserId;
+      if (!userId) continue;
+      const badges = badgeMap.get(userId);
+      if (!badges || badges.length === 0) continue;
+
+      for (const badge of badges) {
+        if (!badge.icon) continue;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.flx = 'ui.profile-badge.badge-button';
+        btn.dataset.encoraCustomBadge = badge.id;
+        btn.style.cssText = 'background:none;border:none;padding:1px;cursor:default;display:inline-flex;align-items:center;justify-content:center;';
+        const img = document.createElement('img');
+        img.src = `/custom-badges/image-proxy?url=${encodeURIComponent(badge.icon)}`;
+        img.alt = badge.tooltip || badge.name || '';
+        img.decoding = 'async';
+        img.dataset.flx = 'ui.profile-badge.badge-art';
+        img.style.cssText = 'width:20px;height:20px;object-fit:contain;';
+        btn.addEventListener('mouseenter', () => _showTooltip(badge.tooltip || badge.name || badge.id, btn));
+        btn.addEventListener('mouseleave', _hideTooltip);
+        btn.appendChild(img);
+        container.appendChild(btn);
+      }
+      container.dataset.encoraInjected = '1';
+    }
   }
 
   let scheduled = false;
