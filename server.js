@@ -567,21 +567,27 @@ const server = http.createServer(async (req, res) => {
         const userBadges = badgesMap.get(actualUserId) || [];
 
         if (userBadges.length > 0) {
-          const injected = userBadges.map(b => ({
-            key: b.id,
-            kind: 'custom',
-            label: b.name || b.tooltip || b.id,
-            asset: null,
-            asset_url: b.icon || null,
-            small_asset: null,
-            aspect_ratio: null,
-            caption: null,
-            href: b.link || null,
-            accessible_label: b.tooltip || b.name || b.id,
-            count: null,
-            details: null,
-            quote: null,
-          }));
+          const domain = process.env.FLUXER_DOMAIN ? `https://${process.env.FLUXER_DOMAIN}` : 'https://prelude.chat';
+          const injected = userBadges.map(b => {
+            const rawIcon = b.icon || '';
+            // Route through image proxy so CSP passes on both web and mobile
+            const assetUrl = rawIcon ? `${domain}/custom-badges/image-proxy?url=${encodeURIComponent(rawIcon)}` : null;
+            return {
+              key: b.id,
+              kind: 'custom',
+              label: b.name || b.tooltip || b.id,
+              asset: null,
+              asset_url: assetUrl,
+              small_asset: null,
+              aspect_ratio: null,
+              caption: null,
+              href: b.link || null,
+              accessible_label: b.tooltip || b.name || b.id,
+              count: null,
+              details: null,
+              quote: null,
+            };
+          });
 
           // Handle both snake_case and camelCase API responses
           if ('profile_badges' in data) {
