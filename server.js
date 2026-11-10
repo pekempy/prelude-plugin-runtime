@@ -30,20 +30,20 @@ const pool = new Pool({
 const _authUserCache = new Map(); // tokenHash → { userId, ts }
 const AUTH_CACHE_TTL = 600_000; // 10 min
 function _hashToken(token) { return require('crypto').createHash('sha256').update(token).digest('hex').slice(0,16); }
-async function _resolveUserId(authHeader, apiUrl) {
+async function _resolveUserId(authHeader, caddyUrl) {
   const token = (authHeader || '').replace(/^Bearer\s+/i,'').trim();
   if (!token) return null;
   const h = _hashToken(token);
   const cached = _authUserCache.get(h);
   if (cached && Date.now() - cached.ts < AUTH_CACHE_TTL) return cached.userId;
   try {
-    const apiHost = new URL(apiUrl);
-    // Try /v1/users/@me first, fallback to /users/@me
-    for (const mePath of ['/v1/users/@me', '/users/@me']) {
+    const caddyHost = new URL(caddyUrl);
+    // Route through Caddy:8088 — same as the main proxy path, handles auth correctly
+    for (const mePath of ['/api/v1/users/@me', '/api/users/@me']) {
       const meRes = await new Promise((resolve, reject) => {
-        const r = http.request({ hostname: apiHost.hostname, port: parseInt(apiHost.port||'80',10),
+        const r = http.request({ hostname: caddyHost.hostname, port: parseInt(caddyHost.port||'8088',10),
           path: mePath, method: 'GET',
-          headers: { 'authorization': authHeader, host: apiHost.host, 'accept-encoding': 'identity' },
+          headers: { 'authorization': authHeader, host: caddyHost.host, 'accept-encoding': 'identity' },
         }, resolve);
         r.on('error', reject); r.end();
       });
@@ -596,7 +596,7 @@ const server = http.createServer(async (req, res) => {
     });
 
     // Resolve userId (cached — no extra round trip after first request)
-    const previewUserId = await _resolveUserId(req.headers['authorization'] || '', API_URL);
+    const previewUserId = await _resolveUserId(req.headers['authorization'] || '', CADDY_INTERNAL);
     console.log(`[preview-proxy] userId=${previewUserId}`);
 
     // Load persisted hidden state for this user's custom badges
