@@ -26,6 +26,55 @@ const pool = new Pool({
   user: process.env.PGUSER || 'fluxer',
   password: process.env.PGPASSWORD,
 });
+// --- Auth token → userId cache (avoids GET /users/@me on every preview request) ---
+const _authUserCache = new Map(); // tokenHash → { userId, ts }
+const AUTH_CACHE_TTL = 600_000; // 10 min
+function _hashToken(token) { return require('crypto').createHash('sha256').update(token).digest('hex').slice(0,16); }
+async function _resolveUserId(authHeader, apiUrl) {
+  const token = (authHeader || '').replace(/^Bearer\s+/i,'').trim();
+  if (!token) return null;
+  const h = _hashToken(token);
+  const cached = _authUserCache.get(h);
+  if (cached && Date.now() - cached.ts < AUTH_CACHE_TTL) return cached.userId;
+  try {
+    const apiHost = new URL(apiUrl);
+    const meRes = await new Promise((resolve, reject) => {
+      const r = http.request({ hostname: apiHost.hostname, port: parseInt(apiHost.port||'80',10),
+        path: '/users/@me', method: 'GET',
+        headers: { 'authorization': authHeader, host: apiHost.host, 'accept-encoding': 'identity' },
+      }, resolve);
+      r.on('error', reject); r.end();
+    });
+    let meBody = '';
+    meRes.setEncoding('utf8');
+    await new Promise(r => { meRes.on('data', c => meBody+=c); meRes.on('end', r); });
+    const me = JSON.parse(meBody);
+    const userId = String(me?.id || me?.user?.id || '');
+    if (userId) _authUserCache.set(h, { userId, ts: Date.now() });
+    return userId || null;
+  } catch { return null; }
+}
+
+// --- Custom badge hidden state (per-user, persisted to DB) ---
+// In-memory: Map<userId, Map<badgeKey, hidden>>
+const _customHiddenState = new Map();
+async function _getCustomHidden(userId) {
+  if (_customHiddenState.has(userId)) return _customHiddenState.get(userId);
+  // Load from DB
+  const m = new Map();
+  try {
+    const r = await pool.query(`SELECT badge_id, hidden FROM plugin_user_badges WHERE user_id = $1`, [userId]);
+    for (const row of r.rows) m.set(row.badge_id, Boolean(row.hidden));
+  } catch {}
+  _customHiddenState.set(userId, m);
+  return m;
+}
+async function _setCustomHidden(userId, badgeKey, hidden) {
+  const m = await _getCustomHidden(userId);
+  m.set(badgeKey, hidden);
+  // Persist asynchronously
+  pool.query(`UPDATE plugin_user_badges SET hidden = $1 WHERE user_id = $2 AND badge_id = $3`, [hidden, userId, badgeKey]).catch(() => {});
+}
 
 let badgesCache = new Map();
 let lastFetchTime = 0;
@@ -528,53 +577,40 @@ const server = http.createServer(async (req, res) => {
   // --- Preview proxy: inject custom badges into POST /api(.../v1)?/users/@me/profile-badges/preview ---
   const previewMatch = req.method === 'POST' && /^\/api(?:\/v\d+)?\/users\/@me\/profile-badges\/preview$/.test(pathname);
   if (previewMatch) {
-    console.log(`[preview-proxy] hit: ${req.method} ${pathname}`);
     const API_URL = process.env.API_URL || 'http://api:8080';
-    // Route preview POST through Caddy's internal port — it adds required forwarding headers
     const CADDY_INTERNAL = process.env.CADDY_INTERNAL_URL || 'http://caddy:8088';
     const caddyHost = new URL(CADDY_INTERNAL);
-    // Keep full /api/... path — Caddy:8088 handles /api/* → api:8080
     const previewApiPath = pathname + (parsedUrl.search || '');
 
-    // Decode user ID from JWT without verifying signature
-    // Collect POST body FIRST before any async calls (stream must be read immediately)
+    // Collect POST body FIRST before any async calls
     const bodyBuf = await new Promise((resolve) => {
       const chunks = [];
       req.on('data', c => chunks.push(c));
       req.on('end', () => resolve(Buffer.concat(chunks)));
     });
 
-    // Resolve @me userId via GET /users/@me
-    let previewUserId = null;
-    try {
-      const meRes = await new Promise((resolve, reject) => {
-        const apiHost2 = new URL(API_URL);
-        const r = http.request({
-          hostname: apiHost2.hostname, port: parseInt(apiHost2.port||'80',10),
-          path: '/users/@me', method: 'GET',
-          headers: { ...req.headers, host: apiHost2.host, 'accept-encoding': 'identity' },
-        }, resolve);
-        r.on('error', reject); r.end();
-      });
-      let meBody = '';
-      meRes.setEncoding('utf8');
-      await new Promise(r => { meRes.on('data', c => meBody+=c); meRes.on('end', r); });
-      const me = JSON.parse(meBody);
-      previewUserId = String(me?.id || me?.user?.id || '');
-    } catch (e) { console.log(`[preview-proxy] /users/@me error: ${e.message}`); }
-    console.log(`[preview-proxy] resolved userId=${previewUserId} bodyLen=${bodyBuf.length}`);
-    // Strip our custom badge keys from hidden_profile_badges before forwarding —
-    // the Fluxer API rejects unknown badge keys with 400
-    let customHiddenKeys = new Set();
+    // Resolve userId (cached — no extra round trip after first request)
+    const previewUserId = await _resolveUserId(req.headers['authorization'] || '', API_URL);
+
+    // Load persisted hidden state for this user's custom badges
+    const hiddenState = previewUserId ? await _getCustomHidden(previewUserId) : new Map();
+
+    // Detect if Flutter sent any of our custom badge keys in hidden_profile_badges
+    // Strip them before forwarding (Fluxer API rejects unknown keys with 400)
     let cleanBuf = bodyBuf;
     try {
       const reqJson = JSON.parse(bodyBuf.toString('utf8'));
-      if (Array.isArray(reqJson.hidden_profile_badges)) {
+      if (Array.isArray(reqJson.hidden_profile_badges) && previewUserId) {
         const badgesMap0 = await refreshBadgesCache();
-        const userBadges0 = previewUserId ? (badgesMap0.get(previewUserId) || []) : [];
-        const customKeys = new Set(userBadges0.map(b => b.id));
-        // Separate our keys from native keys
-        reqJson.hidden_profile_badges.forEach(k => { if (customKeys.has(k)) customHiddenKeys.add(k); });
+        const customKeys = new Set((badgesMap0.get(previewUserId) || []).map(b => b.id));
+        // Update persisted state from request
+        for (const k of customKeys) {
+          const nowHidden = reqJson.hidden_profile_badges.includes(k);
+          if (hiddenState.get(k) !== nowHidden) {
+            await _setCustomHidden(previewUserId, k, nowHidden);
+            hiddenState.set(k, nowHidden);
+          }
+        }
         reqJson.hidden_profile_badges = reqJson.hidden_profile_badges.filter(k => !customKeys.has(k));
         cleanBuf = Buffer.from(JSON.stringify(reqJson), 'utf8');
       }
@@ -593,14 +629,11 @@ const server = http.createServer(async (req, res) => {
         proxyReq.end(cleanBuf);
       });
 
-      const upstreamStatus = upstreamRes.statusCode;
-      if (upstreamStatus !== 200) {
+      if (upstreamRes.statusCode !== 200) {
         let errBody = '';
         upstreamRes.setEncoding('utf8');
         await new Promise(r => { upstreamRes.on('data', c => errBody+=c); upstreamRes.on('end', r); });
-        console.log(`[preview-proxy] upstream ${upstreamStatus}: ${errBody.slice(0,200)}`);
-        console.log(`[preview-proxy] forwarded body: ${bodyBuf.toString('utf8').slice(0,200)}`);
-        res.writeHead(upstreamStatus, { 'content-type': 'application/json' });
+        res.writeHead(upstreamRes.statusCode, { 'content-type': 'application/json' });
         res.end(errBody);
         return;
       }
@@ -611,7 +644,7 @@ const server = http.createServer(async (req, res) => {
 
       let data;
       try { data = JSON.parse(body); } catch { data = null; }
-      if (data) console.log(`[preview-proxy] upstream own_badges=${data.own_badges?.length ?? 'missing'} profile_badges=${data.profile_badges?.length ?? 'missing'}`);
+
       if (data && previewUserId) {
         const badgesMap = await refreshBadgesCache();
         const userBadges = badgesMap.get(previewUserId) || [];
@@ -626,13 +659,10 @@ const server = http.createServer(async (req, res) => {
             aspect_ratio: null,
             caption: null,
             href: b.link || null,
-            hidden: customHiddenKeys.has(b.id),
+            hidden: hiddenState.get(b.id) ?? false,
             accessible_label: b.tooltip || b.name || b.id,
           }));
-          // Inject into own_badges (shown in settings) — prepend custom badges
-          const existing = data.own_badges || [];
-          data.own_badges = [...injected, ...existing];
-          console.log(`[preview-proxy] injected ${injected.length} badges into own_badges for ${previewUserId}`);
+          data.own_badges = [...injected, ...(data.own_badges || [])];
           body = JSON.stringify(data);
         }
       }
@@ -650,7 +680,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // --- Profile proxy: inject custom badges into GET /api/v1/users/:userId/profile ---
+  // --- Profile proxy  // --- Profile proxy: inject custom badges into GET /api/v1/users/:userId/profile ---
   const profilePathMatch = req.method === 'GET' && pathname.match(/^\/api(?:\/v\d+)?\/users\/([^/]+)\/profile$/);
   if (profilePathMatch) {
     const userIdParam = profilePathMatch[1];
