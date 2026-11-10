@@ -55,7 +55,7 @@ const server = http.createServer(async (req, res) => {
   });
 
   // Public Categories JSON endpoint (migrated from custom-badges)
-  if (pathname === '/categories/categories.json') {
+  if (pathname === '/categories/categories.json' || pathname === '/custom-badges/categories.json') {
     const categories = loadCategories();
     res.writeHead(200, setCorsHeaders({
       'Content-Type': 'application/json; charset=utf-8',

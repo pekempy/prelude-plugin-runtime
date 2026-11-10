@@ -1,11 +1,10 @@
 const crypto = require('crypto');
 
-const ADMIN_SECRET = process.env.FLUXER_ADMIN_SECRET_KEY_BASE
-  || 'REDACTED_ADMIN_SECRET';
+const ADMIN_SECRET = process.env.FLUXER_ADMIN_SECRET_KEY_BASE;
+if (!ADMIN_SECRET) throw new Error('FLUXER_ADMIN_SECRET_KEY_BASE env var is required');
 
 const ALLOWED_ADMIN_TOKENS = new Set([
   ADMIN_SECRET,
-  'REDACTED_MANUAL_KEY',
 ]);
 
 function checkAdminAuth(req) {

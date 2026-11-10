@@ -585,6 +585,71 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // --- PATCH @me interceptor: handle hidden_profile_badges for custom badges ---
+  const patchMeMatch = req.method === 'PATCH' && /^\/api(?:\/v\d+)?\/users\/@me$/.test(pathname);
+  if (patchMeMatch) {
+    console.log(`[patch-me-interceptor] ${req.method} ${pathname}`);
+    const API_URL = process.env.API_URL || 'http://api:8080';
+    const CADDY_INTERNAL = process.env.CADDY_INTERNAL_URL || 'http://caddy:8088';
+
+    // Collect PATCH body
+    const bodyBuf = await new Promise((resolve) => {
+      const chunks = [];
+      req.on('data', c => chunks.push(c));
+      req.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+
+    // Resolve userId from auth token
+    const userId = await _resolveUserId(req.headers['authorization'] || '', CADDY_INTERNAL);
+    console.log(`[patch-me-interceptor] userId=${userId}`);
+
+    let cleanBuf = bodyBuf;
+    try {
+      const reqJson = JSON.parse(bodyBuf.toString('utf8'));
+      if (Array.isArray(reqJson.hidden_profile_badges) && userId) {
+        // Get all custom badge keys for this user
+        const badgesMap = await refreshBadgesCache();
+        const customKeys = new Set((badgesMap.get(userId) || []).map(b => b.id));
+        
+        // Persist hidden state for each custom badge key in the request
+        for (const k of customKeys) {
+          const nowHidden = reqJson.hidden_profile_badges.includes(k);
+          await _setCustomHidden(userId, k, nowHidden);
+        }
+        
+        // Strip custom badge keys from hidden_profile_badges before forwarding
+        reqJson.hidden_profile_badges = reqJson.hidden_profile_badges.filter(k => !customKeys.has(k));
+        cleanBuf = Buffer.from(JSON.stringify(reqJson), 'utf8');
+      }
+    } catch {}
+
+    try {
+      const apiHost = new URL(API_URL);
+      const apiPath = pathname.replace(/^\/api/, '') + (parsedUrl.search || '');
+      
+      const upstreamRes = await new Promise((resolve, reject) => {
+        const proxyReq = http.request({
+          hostname: apiHost.hostname,
+          port: parseInt(apiHost.port || '80', 10),
+          path: apiPath,
+          method: 'PATCH',
+          headers: { ...req.headers, host: apiHost.host, 'accept-encoding': 'identity', 'content-length': String(cleanBuf.length) },
+        }, resolve);
+        proxyReq.on('error', reject);
+        proxyReq.end(cleanBuf);
+      });
+
+      console.log(`[patch-me-interceptor] upstream status=${upstreamRes.statusCode}`);
+      res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
+      upstreamRes.pipe(res);
+    } catch (err) {
+      console.error('[patch-me-interceptor] Error:', err.message);
+      res.writeHead(502, { 'Content-Type': 'text/plain' });
+      res.end('PATCH @me interceptor error: ' + err.message);
+    }
+    return;
+  }
+
   // --- Profile proxy: inject custom badges into GET /api/v1/users/:userId/profile ---
   const profilePathMatch = req.method === 'GET' && pathname.match(/^\/api(?:\/v\d+)?\/users\/([^/]+)\/profile$/);
   if (profilePathMatch) {
