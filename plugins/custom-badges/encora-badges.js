@@ -268,6 +268,11 @@
     );
     for (const container of containers) {
       if (container.dataset.encoraInjected || container.children.length > 0) continue;
+      // Skip the full profile popout — it uses UserProfilePopout component and gets
+      // badges from the backend API. The mini preview card does not have this class.
+      const nameBtn = container.closest('[data-flx="user.profile.profile-card.profile-card-layout.profile-card"]')
+        ?.querySelector('[data-flx="user.profile.profile-card.profile-card-user-info.name-button.display-name-click"]');
+      if (nameBtn && nameBtn.className.includes('UserProfilePopout')) continue;
       // User ID lives on the avatar element within the same card
       const card = container.closest('[data-flx="user.profile.profile-card.profile-card-layout.profile-card"]');
       if (!card) continue;
