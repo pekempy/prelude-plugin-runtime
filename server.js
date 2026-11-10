@@ -534,14 +534,22 @@ const server = http.createServer(async (req, res) => {
     const apiPath = pathname.replace(/^\/api/, '') + (parsedUrl.search || '');
 
     // Decode user ID from JWT without verifying signature
+    // Collect POST body FIRST before any async calls (stream must be read immediately)
+    const bodyBuf = await new Promise((resolve) => {
+      const chunks = [];
+      req.on('data', c => chunks.push(c));
+      req.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+
+    // Resolve @me userId via GET /users/@me
     let previewUserId = null;
     try {
       const meRes = await new Promise((resolve, reject) => {
-        const apiHost = new URL(API_URL);
+        const apiHost2 = new URL(API_URL);
         const r = http.request({
-          hostname: apiHost.hostname, port: parseInt(apiHost.port||'80',10),
+          hostname: apiHost2.hostname, port: parseInt(apiHost2.port||'80',10),
           path: '/users/@me', method: 'GET',
-          headers: { ...req.headers, host: apiHost.host, 'accept-encoding': 'identity' },
+          headers: { ...req.headers, host: apiHost2.host, 'accept-encoding': 'identity' },
         }, resolve);
         r.on('error', reject); r.end();
       });
@@ -551,14 +559,7 @@ const server = http.createServer(async (req, res) => {
       const me = JSON.parse(meBody);
       previewUserId = String(me?.id || me?.user?.id || '');
     } catch (e) { console.log(`[preview-proxy] /users/@me error: ${e.message}`); }
-    console.log(`[preview-proxy] resolved userId=${previewUserId}`);
-
-    // Collect request body to forward
-    const bodyBuf = await new Promise((resolve) => {
-      const chunks = [];
-      req.on('data', c => chunks.push(c));
-      req.on('end', () => resolve(Buffer.concat(chunks)));
-    });
+    console.log(`[preview-proxy] resolved userId=${previewUserId} bodyLen=${bodyBuf.length}`);
 
     try {
       const upstreamRes = await new Promise((resolve, reject) => {
@@ -573,8 +574,10 @@ const server = http.createServer(async (req, res) => {
         proxyReq.end(bodyBuf);
       });
 
-      if (upstreamRes.statusCode !== 200) {
-        res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
+      const upstreamStatus = upstreamRes.statusCode;
+      if (upstreamStatus !== 200) {
+        console.log(`[preview-proxy] upstream returned ${upstreamStatus}`);
+        res.writeHead(upstreamStatus, upstreamRes.headers);
         upstreamRes.pipe(res);
         return;
       }
@@ -585,7 +588,7 @@ const server = http.createServer(async (req, res) => {
 
       let data;
       try { data = JSON.parse(body); } catch { data = null; }
-
+      if (data) console.log(`[preview-proxy] upstream own_badges=${data.own_badges?.length ?? 'missing'} profile_badges=${data.profile_badges?.length ?? 'missing'}`);
       if (data && previewUserId) {
         const badgesMap = await refreshBadgesCache();
         const userBadges = badgesMap.get(previewUserId) || [];
