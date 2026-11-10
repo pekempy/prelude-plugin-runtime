@@ -528,6 +528,7 @@ const server = http.createServer(async (req, res) => {
   // --- Preview proxy: inject custom badges into POST /api(.../v1)?/users/@me/profile-badges/preview ---
   const previewMatch = req.method === 'POST' && /^\/api(?:\/v\d+)?\/users\/@me\/profile-badges\/preview$/.test(pathname);
   if (previewMatch) {
+    console.log(`[preview-proxy] hit: ${req.method} ${pathname}`);
     const API_URL = process.env.API_URL || 'http://api:8080';
     const apiHost = new URL(API_URL);
     const apiPath = pathname.replace(/^\/api/, '') + (parsedUrl.search || '');
@@ -541,7 +542,8 @@ const server = http.createServer(async (req, res) => {
         const payload = JSON.parse(Buffer.from(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'), 'base64').toString('utf8'));
         previewUserId = String(payload.sub || payload.id || payload.user_id || '');
       }
-    } catch {}
+    } catch (e) { console.log(`[preview-proxy] JWT decode error: ${e.message}`); }
+    console.log(`[preview-proxy] decoded userId=${previewUserId}`);
 
     // Collect request body to forward
     const bodyBuf = await new Promise((resolve) => {
