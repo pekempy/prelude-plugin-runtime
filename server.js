@@ -525,6 +525,87 @@ const server = http.createServer(async (req, res) => {
       return;
     }
   }
+  // --- Profile proxy: inject custom badges into GET /api/v1/users/:userId/profile ---
+  const profilePathMatch = req.method === 'GET' && pathname.match(/^\/api\/v1\/users\/([^/]+)\/profile$/);
+  if (profilePathMatch) {
+    const userIdParam = profilePathMatch[1];
+    const API_URL = process.env.API_URL || 'http://api:8080';
+    // Strip /api prefix — api:8080 serves routes without it
+    const apiPath = pathname.replace(/^\/api/, '') + (parsedUrl.search || '');
+    try {
+      const apiHost = new URL(API_URL);
+      const upstreamRes = await new Promise((resolve, reject) => {
+        const proxyReq = http.request({
+          hostname: apiHost.hostname,
+          port: parseInt(apiHost.port || '80', 10),
+          path: apiPath,
+          method: 'GET',
+          headers: { ...req.headers, host: apiHost.host, 'accept-encoding': 'identity' },
+        }, resolve);
+        proxyReq.on('error', reject);
+        proxyReq.end();
+      });
+
+      if (upstreamRes.statusCode !== 200) {
+        res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
+        upstreamRes.pipe(res);
+        return;
+      }
+
+      let body = '';
+      upstreamRes.setEncoding('utf8');
+      await new Promise(resolve => { upstreamRes.on('data', c => { body += c; }); upstreamRes.on('end', resolve); });
+
+      let data;
+      try { data = JSON.parse(body); } catch { data = null; }
+
+      if (data) {
+        const actualUserId = String(data?.user?.id || userIdParam);
+        const badgesMap = await refreshBadgesCache();
+        const userBadges = badgesMap.get(actualUserId) || [];
+
+        if (userBadges.length > 0) {
+          const injected = userBadges.map(b => ({
+            key: b.id,
+            kind: 'custom',
+            label: b.name || b.tooltip || b.id,
+            asset: null,
+            asset_url: b.icon || null,
+            small_asset: null,
+            aspect_ratio: null,
+            caption: null,
+            href: b.link || null,
+            accessible_label: b.tooltip || b.name || b.id,
+            count: null,
+            details: null,
+            quote: null,
+          }));
+
+          // Handle both snake_case and camelCase API responses
+          if ('profile_badges' in data) {
+            data.profile_badges = [...injected, ...(data.profile_badges || [])];
+          } else if ('profileBadges' in data) {
+            data.profileBadges = [...injected, ...(data.profileBadges || [])];
+          } else {
+            data.profile_badges = injected;
+          }
+        }
+        body = JSON.stringify(data);
+      }
+
+      const outHeaders = { ...upstreamRes.headers, 'content-type': 'application/json' };
+      delete outHeaders['transfer-encoding'];
+      outHeaders['content-length'] = String(Buffer.byteLength(body, 'utf8'));
+      res.writeHead(200, outHeaders);
+      res.end(body);
+    } catch (err) {
+      console.error('[plugin-runtime] Profile proxy error:', err.message);
+      res.writeHead(502, { 'Content-Type': 'text/plain' });
+      res.end('Profile proxy error: ' + err.message);
+    }
+    return;
+  }
+
 
 
   // Admin authentication guard for all /admin/plugins* routes

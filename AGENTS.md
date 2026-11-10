@@ -1,7 +1,14 @@
 # prelude-plugin-runtime — Agent Notes
 
+## Plugin Philosophy (INVIOLABLE)
+- **Every plugin must be individual, self-contained, and independently deployable.**
+- **Do NOT modify upstream Fluxer code, images, or compose files.** All overrides go through the Caddyfile or `compose.plugins.yaml` only.
+- **Backend over frontend.** If a feature can be served cleanly by intercepting/modifying an API response server-side, do that — do NOT add client-side JS hacks to achieve the same result. When a backend approach is confirmed working, remove the JS workaround.
+- **No dead code.** Delete hacks when replaced by proper implementations.
+- **Plugins must be shareable** — another Fluxer instance should be able to adopt this runtime and have it work without custom changes.
+
 ## What this is
-The **legacy plugin server** for Prelude (`prelude.chat`). A single Node.js `server.js` process that sits as a reverse proxy in front of Fluxer's `app-proxy`, handling:
+The **plugin server** for Prelude (`prelude.chat`). A Node.js `server.js` process that sits as a reverse proxy in front of Fluxer, handling:
 
 - **Custom badge serving** — `/custom-badges/badges.json`, `/custom-badges/image-proxy`, `/custom-badges/encora-badges.js` (client-side badge injection script)
 - **Discovery category overrides** — intercepts `/api/v1/discovery/categories` and returns custom categories from `discovery-categories.json`

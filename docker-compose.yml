@@ -21,6 +21,7 @@ services:
     environment:
       PORT: "8080"
       UPSTREAM_URL: "http://app-proxy:8080"
+      API_URL: "http://api:8080"
       PGHOST: postgres
       PGPORT: "5432"
       PGDATABASE: fluxer
