@@ -23,6 +23,7 @@ services:
       UPSTREAM_URL: "http://app-proxy:8080"
       API_URL: "http://api:8080"
       FLUXER_DOMAIN: ${FLUXER_DOMAIN:-prelude.chat}
+      CADDY_INTERNAL_URL: "http://caddy:8088"
       PGHOST: postgres
       PGPORT: "5432"
       PGDATABASE: fluxer

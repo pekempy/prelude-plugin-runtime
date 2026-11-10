@@ -530,8 +530,11 @@ const server = http.createServer(async (req, res) => {
   if (previewMatch) {
     console.log(`[preview-proxy] hit: ${req.method} ${pathname}`);
     const API_URL = process.env.API_URL || 'http://api:8080';
-    const apiHost = new URL(API_URL);
-    const apiPath = pathname.replace(/^\/api/, '') + (parsedUrl.search || '');
+    // Route preview POST through Caddy's internal port — it adds required forwarding headers
+    const CADDY_INTERNAL = process.env.CADDY_INTERNAL_URL || 'http://caddy:8088';
+    const caddyHost = new URL(CADDY_INTERNAL);
+    // Keep full /api/... path — Caddy:8088 handles /api/* → api:8080
+    const previewApiPath = pathname + (parsedUrl.search || '');
 
     // Decode user ID from JWT without verifying signature
     // Collect POST body FIRST before any async calls (stream must be read immediately)
@@ -564,19 +567,11 @@ const server = http.createServer(async (req, res) => {
     try {
       const upstreamRes = await new Promise((resolve, reject) => {
         const proxyReq = http.request({
-          hostname: apiHost.hostname,
-          port: parseInt(apiHost.port || '80', 10),
-          path: apiPath,
+          hostname: caddyHost.hostname,
+          port: parseInt(caddyHost.port || '8088', 10),
+          path: previewApiPath,
           method: 'POST',
-          headers: {
-            'authorization': req.headers['authorization'] || '',
-            'content-type': req.headers['content-type'] || 'application/json',
-            'content-length': String(bodyBuf.length),
-            'accept': req.headers['accept'] || 'application/json',
-            'user-agent': req.headers['user-agent'] || '',
-            'host': apiHost.host,
-            'accept-encoding': 'identity',
-          },
+          headers: { ...req.headers, host: caddyHost.host, 'accept-encoding': 'identity', 'content-length': String(bodyBuf.length) },
         }, resolve);
         proxyReq.on('error', reject);
         proxyReq.end(bodyBuf);
