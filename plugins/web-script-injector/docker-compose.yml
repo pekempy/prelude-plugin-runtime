@@ -1,0 +1,23 @@
+name: fluxer-plugin-web-script-injector
+services:
+  plugin-web-script-injector:
+    image: node:24-bookworm-slim
+    restart: unless-stopped
+    working_dir: /plugin
+    # npm install at repo root satisfies shared/pg.js's require('pg')
+    command: ["sh", "-c", "npm install --omit=dev --silent && exec node plugins/web-script-injector/index.js"]
+    environment:
+      PORT: "8080"
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: fluxer
+      PGUSER: fluxer
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      FLUXER_ADMIN_SECRET_KEY_BASE: ${FLUXER_ADMIN_SECRET_KEY_BASE}
+    volumes:
+      - ../../:/plugin  # mounts repo root; shared/ and plugins/ both accessible
+    networks: [fluxer]
+networks:
+  fluxer:
+    external: true
+    name: fluxer_fluxer

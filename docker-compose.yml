@@ -1,38 +1,86 @@
 name: fluxer-plugins
 services:
-  encora-linker:
-    image: postgres:16-alpine
-    profiles: [tools]
-    entrypoint: [/bin/sh, /plugin/link-encora.sh]
-    environment:
-      PGHOST: postgres
-      PGPORT: "5432"
-      PGDATABASE: fluxer
-      PGUSER: fluxer
-      PGPASSWORD: ${POSTGRES_PASSWORD:?load the Fluxer .env with --env-file}
-    volumes:
-      - ./:/plugin:ro
-    networks: [fluxer]
-  plugin-server:
+  plugin-custom-badges:
     image: node:24-bookworm-slim
     restart: unless-stopped
-    working_dir: /app
-    command: ["node", "server.js"]
+    working_dir: /plugin
+    command: ["sh", "-c", "npm install --omit=dev --silent && exec node plugins/custom-badges/index.js"]
     environment:
-      PORT: "8080"
-      UPSTREAM_URL: "http://app-proxy:8080"
-      API_URL: "http://api:8080"
-      FLUXER_DOMAIN: ${FLUXER_DOMAIN:-prelude.chat}
-      CADDY_INTERNAL_URL: "http://caddy:8088"
+      PORT: "8081"
       PGHOST: postgres
       PGPORT: "5432"
       PGDATABASE: fluxer
       PGUSER: fluxer
-      PGPASSWORD: ${POSTGRES_PASSWORD:?load the Fluxer .env with --env-file}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      FLUXER_ADMIN_SECRET_KEY_BASE: ${FLUXER_ADMIN_SECRET_KEY_BASE}
+      CADDY_INTERNAL_URL: ${CADDY_INTERNAL_URL:-http://caddy:8088}
+      FLUXER_DOMAIN: ${FLUXER_DOMAIN:-prelude.chat}
+    volumes:
+      - ./:/plugin
+    networks: [fluxer]
+
+  plugin-discovery-categories:
+    image: node:24-bookworm-slim
+    restart: unless-stopped
+    working_dir: /plugin
+    command: ["sh", "-c", "npm install --omit=dev --silent && exec node plugins/discovery-categories/index.js"]
+    environment:
+      PORT: "8082"
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: fluxer
+      PGUSER: fluxer
+      PGPASSWORD: ${POSTGRES_PASSWORD}
       FLUXER_ADMIN_SECRET_KEY_BASE: ${FLUXER_ADMIN_SECRET_KEY_BASE}
     volumes:
-      - ./:/app
+      - ./:/plugin
     networks: [fluxer]
+
+  plugin-encora-linking:
+    image: node:24-bookworm-slim
+    restart: unless-stopped
+    working_dir: /plugin
+    command: ["sh", "-c", "npm install --omit=dev --silent && exec node plugins/encora-linking/index.js"]
+    environment:
+      PORT: "8083"
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: fluxer
+      PGUSER: fluxer
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      FLUXER_ADMIN_SECRET_KEY_BASE: ${FLUXER_ADMIN_SECRET_KEY_BASE}
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      ENCORA_GUILD_ID: ${ENCORA_GUILD_ID:-}
+      ENCORA_LINKED_ROLE_ID: ${ENCORA_LINKED_ROLE_ID:-}
+    volumes:
+      - ./:/plugin
+    networks: [fluxer]
+
+  plugin-admin-panel:
+    image: node:24-bookworm-slim
+    restart: unless-stopped
+    working_dir: /plugin
+    command: ["sh", "-c", "npm install --omit=dev --silent && exec node plugins/admin-panel/index.js"]
+    environment:
+      PORT: "8084"
+      FLUXER_ADMIN_SECRET_KEY_BASE: ${FLUXER_ADMIN_SECRET_KEY_BASE}
+    volumes:
+      - ./:/plugin
+    networks: [fluxer]
+
+  plugin-web-script-injector:
+    image: node:24-bookworm-slim
+    restart: unless-stopped
+    working_dir: /plugin
+    command: ["sh", "-c", "exec node plugins/web-script-injector/index.js"]
+    environment:
+      PORT: "8080"
+      UPSTREAM_URL: ${UPSTREAM_URL:-http://app-proxy:8080}
+      SCRIPT_VERSION: ${SCRIPT_VERSION:-2.4.0}
+    volumes:
+      - ./:/plugin
+    networks: [fluxer]
+
 networks:
   fluxer:
     external: true

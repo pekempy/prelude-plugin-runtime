@@ -1,0 +1,12 @@
+{
+  "name": "plugin-encora-linking",
+  "version": "1.0.0",
+  "description": "Encora account linking plugin",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "pg": "^8.11.0"
+  }
+}

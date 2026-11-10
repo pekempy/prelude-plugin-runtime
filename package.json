@@ -1,5 +1,9 @@
 {
+  "name": "prelude-plugin-runtime",
+  "version": "1.0.0",
+  "description": "Shared dependencies for all plugins (required by shared/ utilities)",
+  "private": true,
   "dependencies": {
-    "pg": "^8.23.1"
+    "pg": "^8.11.0"
   }
 }

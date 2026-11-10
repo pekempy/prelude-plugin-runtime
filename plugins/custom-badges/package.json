@@ -1,0 +1,12 @@
+{
+  "name": "plugin-custom-badges",
+  "version": "1.0.0",
+  "description": "Custom badges plugin for Prelude",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "pg": "^8.11.0"
+  }
+}

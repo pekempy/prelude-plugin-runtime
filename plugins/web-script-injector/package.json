@@ -1,0 +1,10 @@
+{
+  "name": "plugin-web-script-injector",
+  "version": "1.0.0",
+  "description": "HTML script injection and proxy plugin",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {}
+}
