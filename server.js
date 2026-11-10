@@ -653,27 +653,9 @@ const server = http.createServer(async (req, res) => {
       let data;
       try { data = JSON.parse(body); } catch { data = null; }
 
-      if (data && previewUserId) {
-        const badgesMap = await refreshBadgesCache();
-        const userBadges = badgesMap.get(previewUserId) || [];
-        if (userBadges.length > 0) {
-          const domain = process.env.FLUXER_DOMAIN ? `https://${process.env.FLUXER_DOMAIN}` : 'https://prelude.chat';
-          const injected = userBadges.map(b => ({
-            key: b.id,
-            kind: 'custom',
-            label: b.name || b.tooltip || b.id,
-            asset: null,
-            asset_url: b.icon ? `${domain}/custom-badges/image-proxy?url=${encodeURIComponent(b.icon)}` : null,
-            aspect_ratio: null,
-            caption: null,
-            href: b.link || null,
-            hidden: hiddenState.get(b.id) ?? false,
-            accessible_label: b.tooltip || b.name || b.id,
-          }));
-          data.own_badges = [...injected, ...(data.own_badges || [])];
-          body = JSON.stringify(data);
-        }
-      }
+      // Don't inject into own_badges — Flutter's kProfileBadgeKinds guard prevents
+      // toggling custom badges, so showing them with broken toggles is worse than not showing them.
+      // Custom badges already appear on profiles via the GET /profile proxy.
 
       const outHeaders = { ...upstreamRes.headers, 'content-type': 'application/json' };
       delete outHeaders['transfer-encoding'];
