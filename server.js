@@ -584,9 +584,13 @@ const server = http.createServer(async (req, res) => {
 
       const upstreamStatus = upstreamRes.statusCode;
       if (upstreamStatus !== 200) {
-        console.log(`[preview-proxy] upstream returned ${upstreamStatus}`);
-        res.writeHead(upstreamStatus, upstreamRes.headers);
-        upstreamRes.pipe(res);
+        let errBody = '';
+        upstreamRes.setEncoding('utf8');
+        await new Promise(r => { upstreamRes.on('data', c => errBody+=c); upstreamRes.on('end', r); });
+        console.log(`[preview-proxy] upstream ${upstreamStatus}: ${errBody.slice(0,200)}`);
+        console.log(`[preview-proxy] forwarded body: ${bodyBuf.toString('utf8').slice(0,200)}`);
+        res.writeHead(upstreamStatus, { 'content-type': 'application/json' });
+        res.end(errBody);
         return;
       }
 
