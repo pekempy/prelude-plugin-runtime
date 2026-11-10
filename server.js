@@ -1185,6 +1185,30 @@ const server = http.createServer(async (req, res) => {
     }
     return;
   }
+  // --- API passthrough: any /api/* not handled above goes straight to api:8080 ---
+  if (pathname.startsWith('/api/')) {
+    const API_URL = process.env.API_URL || 'http://api:8080';
+    const apiHost = new URL(API_URL);
+    const apiPath = pathname.replace(/^\/api/, '') + (parsedUrl.search || '');
+    const proxyReq = http.request({
+      hostname: apiHost.hostname,
+      port: parseInt(apiHost.port || '80', 10),
+      path: apiPath,
+      method: req.method,
+      headers: { ...req.headers, host: apiHost.host, 'accept-encoding': 'identity' },
+    }, (upstreamRes) => {
+      res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
+      upstreamRes.pipe(res);
+    });
+    proxyReq.on('error', (err) => {
+      console.error('[plugin-runtime] API passthrough error:', err.message);
+      res.writeHead(502, { 'Content-Type': 'text/plain' });
+      res.end('API proxy error: ' + err.message);
+    });
+    req.pipe(proxyReq);
+    return;
+  }
+
 
   // --- Fallback: Proxy to UPSTREAM_URL (app-proxy:8080) with script injection ---
   try {
