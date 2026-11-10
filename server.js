@@ -546,6 +546,7 @@ const server = http.createServer(async (req, res) => {
         proxyReq.end();
       });
 
+      console.log(`[profile-proxy] ${req.method} ${pathname} → upstream status ${upstreamRes.statusCode}`);
       if (upstreamRes.statusCode !== 200) {
         res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
         upstreamRes.pipe(res);
@@ -561,6 +562,7 @@ const server = http.createServer(async (req, res) => {
 
       if (data) {
         const actualUserId = String(data?.user?.id || userIdParam);
+        console.log(`[profile-proxy] userId=${actualUserId} responseKeys=${Object.keys(data).join(',')}`);
         const badgesMap = await refreshBadgesCache();
         const userBadges = badgesMap.get(actualUserId) || [];
 
