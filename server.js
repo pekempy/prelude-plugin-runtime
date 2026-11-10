@@ -526,7 +526,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
   // --- Profile proxy: inject custom badges into GET /api/v1/users/:userId/profile ---
-  const profilePathMatch = req.method === 'GET' && pathname.match(/^\/api\/v1\/users\/([^/]+)\/profile$/);
+  const profilePathMatch = req.method === 'GET' && pathname.match(/^\/api(?:\/v\d+)?\/users\/([^/]+)\/profile$/);
   if (profilePathMatch) {
     const userIdParam = profilePathMatch[1];
     const API_URL = process.env.API_URL || 'http://api:8080';
