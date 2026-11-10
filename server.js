@@ -568,7 +568,15 @@ const server = http.createServer(async (req, res) => {
           port: parseInt(apiHost.port || '80', 10),
           path: apiPath,
           method: 'POST',
-          headers: { ...req.headers, host: apiHost.host, 'accept-encoding': 'identity', 'content-length': bodyBuf.length },
+          headers: {
+            'authorization': req.headers['authorization'] || '',
+            'content-type': req.headers['content-type'] || 'application/json',
+            'content-length': String(bodyBuf.length),
+            'accept': req.headers['accept'] || 'application/json',
+            'user-agent': req.headers['user-agent'] || '',
+            'host': apiHost.host,
+            'accept-encoding': 'identity',
+          },
         }, resolve);
         proxyReq.on('error', reject);
         proxyReq.end(bodyBuf);
