@@ -267,7 +267,7 @@
       '[data-flx="user.profile.profile-card.profile-card-user-info.badge-container"]'
     );
     for (const container of containers) {
-      if (container.dataset.encoraInjected) continue;
+      if (container.dataset.encoraInjected || container.children.length > 0) continue;
       // User ID lives on the avatar element within the same card
       const card = container.closest('[data-flx="user.profile.profile-card.profile-card-layout.profile-card"]');
       if (!card) continue;
