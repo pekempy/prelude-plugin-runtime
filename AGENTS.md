@@ -62,3 +62,14 @@ Key routes:
 - `/custom-badges/*` → `plugin-server:8080` (via `plugin-server:8080 app-proxy:8080` fallback chain for main site)
 - `/api/admin/users/link-encora*` → `plugin-server:8080`
 - `/api/admin/users/unlink-encora*` → `plugin-server:8080`
+
+## 📌 TODO (soon™)
+
+### Mobile badge toggle support
+Custom badges appear in the Flutter mobile settings page but their toggle is **non-functional** — tapping does nothing. Root cause: Flutter's `kProfileBadgeKinds` Set in `flutter_client` doesn't include `"custom"`, so the toggle tap handler is a no-op for custom-kind badges.
+
+**Fix**: one-liner PR to `fluxerapp/flutter_client`:
+- File: `lib/features/profile/utils/profile_badge_keys.dart`
+- Change: add `'custom'` to the `kProfileBadgeKinds` Set
+
+Once that ships, the mobile toggle will work via the existing `hidden_profile_badges` mechanism — our `server.js` preview proxy already handles stripping/restoring custom badge keys from the request body and persisting the hidden state to `plugin_user_badges.hidden`.
