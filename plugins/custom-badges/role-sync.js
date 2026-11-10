@@ -50,6 +50,7 @@ function isBadgeSyncAuthorized(authorization, expectedToken) {
 }
 
 module.exports = {
+  isSnowflake,
   isBadgeSyncAuthorized,
   linkedBadgeIdsForRoles,
   normalizeRoleSyncSnapshot,
