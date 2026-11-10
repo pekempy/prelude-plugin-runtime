@@ -791,6 +791,7 @@
       injectIntoExistingBadgeContainers();
       injectIntoCardsWithoutBadges();
       injectIntoModalsWithoutBadges();
+      injectSettingsBadges();
     } catch (e) {
       remoteLog('PROCESS_ALL_ERROR', { error: e.message, stack: e.stack });
     }
