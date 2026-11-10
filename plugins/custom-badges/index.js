@@ -551,7 +551,7 @@ const server = http.createServer(async (req, res) => {
             aspect_ratio: null,
             caption: null,
             href: b.link || null,
-            hidden: false,
+            hidden: hiddenState.get(b.id) ?? false,
             accessible_label: b.tooltip || b.name || b.id,
           }));
           data.own_badges = [...injected, ...(data.own_badges || [])];
@@ -610,7 +610,8 @@ const server = http.createServer(async (req, res) => {
       if (data) {
         const actualUserId = String(data?.user?.id || userIdParam);
         const badgesMap = await refreshBadgesCache();
-        const userBadges = badgesMap.get(actualUserId) || [];
+        const hiddenMap = await _getCustomHidden(actualUserId);
+        const userBadges = (badgesMap.get(actualUserId) || []).filter(b => !(hiddenMap.get(b.id) ?? false));
         if (userBadges.length) console.log(`[profile-proxy] injecting ${userBadges.length} badges for ${actualUserId}`);
 
         if (userBadges.length > 0) {
