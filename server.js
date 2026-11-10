@@ -525,6 +525,95 @@ const server = http.createServer(async (req, res) => {
       return;
     }
   }
+  // --- Preview proxy: inject custom badges into POST /api(.../v1)?/users/@me/profile-badges/preview ---
+  const previewMatch = req.method === 'POST' && /^\/api(?:\/v\d+)?\/users\/@me\/profile-badges\/preview$/.test(pathname);
+  if (previewMatch) {
+    const API_URL = process.env.API_URL || 'http://api:8080';
+    const apiHost = new URL(API_URL);
+    const apiPath = pathname.replace(/^\/api/, '') + (parsedUrl.search || '');
+
+    // Decode user ID from JWT without verifying signature
+    let previewUserId = null;
+    try {
+      const auth = req.headers['authorization'] || '';
+      const token = auth.replace(/^Bearer\s+/i, '').trim();
+      if (token && token.includes('.')) {
+        const payload = JSON.parse(Buffer.from(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'), 'base64').toString('utf8'));
+        previewUserId = String(payload.sub || payload.id || payload.user_id || '');
+      }
+    } catch {}
+
+    // Collect request body to forward
+    const bodyBuf = await new Promise((resolve) => {
+      const chunks = [];
+      req.on('data', c => chunks.push(c));
+      req.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+
+    try {
+      const upstreamRes = await new Promise((resolve, reject) => {
+        const proxyReq = http.request({
+          hostname: apiHost.hostname,
+          port: parseInt(apiHost.port || '80', 10),
+          path: apiPath,
+          method: 'POST',
+          headers: { ...req.headers, host: apiHost.host, 'accept-encoding': 'identity', 'content-length': bodyBuf.length },
+        }, resolve);
+        proxyReq.on('error', reject);
+        proxyReq.end(bodyBuf);
+      });
+
+      if (upstreamRes.statusCode !== 200) {
+        res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
+        upstreamRes.pipe(res);
+        return;
+      }
+
+      let body = '';
+      upstreamRes.setEncoding('utf8');
+      await new Promise(resolve => { upstreamRes.on('data', c => { body += c; }); upstreamRes.on('end', resolve); });
+
+      let data;
+      try { data = JSON.parse(body); } catch { data = null; }
+
+      if (data && previewUserId) {
+        const badgesMap = await refreshBadgesCache();
+        const userBadges = badgesMap.get(previewUserId) || [];
+        if (userBadges.length > 0) {
+          const domain = process.env.FLUXER_DOMAIN ? `https://${process.env.FLUXER_DOMAIN}` : 'https://prelude.chat';
+          const injected = userBadges.map(b => ({
+            key: b.id,
+            kind: 'custom',
+            label: b.name || b.tooltip || b.id,
+            asset: null,
+            asset_url: b.icon ? `${domain}/custom-badges/image-proxy?url=${encodeURIComponent(b.icon)}` : null,
+            aspect_ratio: null,
+            caption: null,
+            href: b.link || null,
+            hidden: false,
+            accessible_label: b.tooltip || b.name || b.id,
+          }));
+          // Inject into own_badges (shown in settings) — prepend custom badges
+          const existing = data.own_badges || [];
+          data.own_badges = [...injected, ...existing];
+          console.log(`[preview-proxy] injected ${injected.length} badges into own_badges for ${previewUserId}`);
+          body = JSON.stringify(data);
+        }
+      }
+
+      const outHeaders = { ...upstreamRes.headers, 'content-type': 'application/json' };
+      delete outHeaders['transfer-encoding'];
+      outHeaders['content-length'] = String(Buffer.byteLength(body, 'utf8'));
+      res.writeHead(200, outHeaders);
+      res.end(body);
+    } catch (err) {
+      console.error('[plugin-runtime] Preview proxy error:', err.message);
+      res.writeHead(502, { 'Content-Type': 'text/plain' });
+      res.end('Preview proxy error: ' + err.message);
+    }
+    return;
+  }
+
   // --- Profile proxy: inject custom badges into GET /api/v1/users/:userId/profile ---
   const profilePathMatch = req.method === 'GET' && pathname.match(/^\/api(?:\/v\d+)?\/users\/([^/]+)\/profile$/);
   if (profilePathMatch) {
@@ -562,10 +651,9 @@ const server = http.createServer(async (req, res) => {
 
       if (data) {
         const actualUserId = String(data?.user?.id || userIdParam);
-        console.log(`[profile-proxy] userId=${actualUserId} responseKeys=${Object.keys(data).join(',')}`);
         const badgesMap = await refreshBadgesCache();
         const userBadges = badgesMap.get(actualUserId) || [];
-        console.log(`[profile-proxy] cacheSize=${badgesMap.size} userBadges=${userBadges.length} for userId=${actualUserId}`);
+        if (userBadges.length) console.log(`[profile-proxy] injecting ${userBadges.length} badges for ${actualUserId}`);
 
         if (userBadges.length > 0) {
           const domain = process.env.FLUXER_DOMAIN ? `https://${process.env.FLUXER_DOMAIN}` : 'https://prelude.chat';
