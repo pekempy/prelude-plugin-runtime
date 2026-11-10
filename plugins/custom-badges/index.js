@@ -763,6 +763,7 @@ const server = http.createServer(async (req, res) => {
 
       const badgeIds = await syncMemberRoleSnapshot(pool, snapshot);
       await refreshBadgesCache(true);
+      console.log(`[role-sync] user=${snapshot.userId} guild=${snapshot.guildId} badges=[${badgeIds.join(',')}]`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true, badge_ids: badgeIds }));
     } catch (err) {
