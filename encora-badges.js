@@ -788,9 +788,6 @@
     }
     if (!isLoaded) return;
     try {
-      injectIntoExistingBadgeContainers();
-      injectIntoCardsWithoutBadges();
-      injectIntoModalsWithoutBadges();
       injectSettingsBadges();
     } catch (e) {
       remoteLog('PROCESS_ALL_ERROR', { error: e.message, stack: e.stack });
@@ -832,28 +829,9 @@
     const res = await origFetch.apply(this, args);
     try {
       const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url);
+      // Capture own user ID for settings badge injection
       if (url && /\/users\/@me$/.test(url) && res.ok) {
         res.clone().json().then(d => { const id = d?.id||d?.user?.id; if (id) { _cachedMyId = String(id); injectSettingsBadges(); } }).catch(() => {});
-      }
-      if (url && url.includes('/profile') && res.ok) {
-        res.clone().json().then(data => {
-          if (data && data.user && data.user.id && data.connected_accounts) {
-            const encora = data.connected_accounts.find(c => 
-              c.type === 'domain' && c.name && c.name.toLowerCase().includes('encora')
-            );
-            const uid = String(data.user.id);
-            if (encora && !badgeMap.has(uid)) {
-              badgeMap.set(uid, [{
-                id: 'encora_linked',
-                name: 'Encora Trader',
-                icon: 'https://encora.it/images/favicon.png',
-                link: 'https://' + encora.name,
-                tooltip: 'Encora: ' + encora.name.replace(/^encora\.it\/traders\//, '')
-              }]);
-              processAll();
-            }
-          }
-        }).catch(() => {});
       }
     } catch (e) {}
     return res;
