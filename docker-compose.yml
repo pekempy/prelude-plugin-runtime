@@ -13,6 +13,7 @@ services:
       PGUSER: fluxer
       PGPASSWORD: ${POSTGRES_PASSWORD}
       FLUXER_ADMIN_SECRET_KEY_BASE: ${FLUXER_ADMIN_SECRET_KEY_BASE}
+      API_URL: ${API_URL:-http://api:8080}
       CADDY_INTERNAL_URL: ${CADDY_INTERNAL_URL:-http://caddy:8088}
       FLUXER_DOMAIN: ${FLUXER_DOMAIN:-prelude.chat}
     volumes:
