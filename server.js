@@ -565,6 +565,7 @@ const server = http.createServer(async (req, res) => {
         console.log(`[profile-proxy] userId=${actualUserId} responseKeys=${Object.keys(data).join(',')}`);
         const badgesMap = await refreshBadgesCache();
         const userBadges = badgesMap.get(actualUserId) || [];
+        console.log(`[profile-proxy] cacheSize=${badgesMap.size} userBadges=${userBadges.length} for userId=${actualUserId}`);
 
         if (userBadges.length > 0) {
           const domain = process.env.FLUXER_DOMAIN ? `https://${process.env.FLUXER_DOMAIN}` : 'https://prelude.chat';
