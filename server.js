@@ -563,6 +563,22 @@ const server = http.createServer(async (req, res) => {
       previewUserId = String(me?.id || me?.user?.id || '');
     } catch (e) { console.log(`[preview-proxy] /users/@me error: ${e.message}`); }
     console.log(`[preview-proxy] resolved userId=${previewUserId} bodyLen=${bodyBuf.length}`);
+    // Strip our custom badge keys from hidden_profile_badges before forwarding —
+    // the Fluxer API rejects unknown badge keys with 400
+    let customHiddenKeys = new Set();
+    let cleanBuf = bodyBuf;
+    try {
+      const reqJson = JSON.parse(bodyBuf.toString('utf8'));
+      if (Array.isArray(reqJson.hidden_profile_badges)) {
+        const badgesMap0 = await refreshBadgesCache();
+        const userBadges0 = previewUserId ? (badgesMap0.get(previewUserId) || []) : [];
+        const customKeys = new Set(userBadges0.map(b => b.id));
+        // Separate our keys from native keys
+        reqJson.hidden_profile_badges.forEach(k => { if (customKeys.has(k)) customHiddenKeys.add(k); });
+        reqJson.hidden_profile_badges = reqJson.hidden_profile_badges.filter(k => !customKeys.has(k));
+        cleanBuf = Buffer.from(JSON.stringify(reqJson), 'utf8');
+      }
+    } catch {}
 
     try {
       const upstreamRes = await new Promise((resolve, reject) => {
@@ -571,10 +587,10 @@ const server = http.createServer(async (req, res) => {
           port: parseInt(caddyHost.port || '8088', 10),
           path: previewApiPath,
           method: 'POST',
-          headers: { ...req.headers, host: caddyHost.host, 'accept-encoding': 'identity', 'content-length': String(bodyBuf.length) },
+          headers: { ...req.headers, host: caddyHost.host, 'accept-encoding': 'identity', 'content-length': String(cleanBuf.length) },
         }, resolve);
         proxyReq.on('error', reject);
-        proxyReq.end(bodyBuf);
+        proxyReq.end(cleanBuf);
       });
 
       const upstreamStatus = upstreamRes.statusCode;
@@ -610,7 +626,7 @@ const server = http.createServer(async (req, res) => {
             aspect_ratio: null,
             caption: null,
             href: b.link || null,
-            hidden: false,
+            hidden: customHiddenKeys.has(b.id),
             accessible_label: b.tooltip || b.name || b.id,
           }));
           // Inject into own_badges (shown in settings) — prepend custom badges
