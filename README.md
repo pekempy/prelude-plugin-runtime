@@ -19,7 +19,7 @@ The plugin ecosystem consists of:
 - Docker and Docker Compose
 - PostgreSQL 16+ (can use included postgres service)
 - Caddy reverse proxy (configured separately)
-- Discord bot token (for encora-linking)
+- Bot token (badge role pickers and Encora linking)
 
 ### Running All Plugins
 
@@ -30,6 +30,7 @@ export FLUXER_ADMIN_SECRET_KEY_BASE="your-admin-secret"
 export BOT_TOKEN="your-discord-bot-token"
 export ENCORA_GUILD_ID="1518021155376594944"
 export ENCORA_LINKED_ROLE_ID="1518032794880573443"
+# Optional: set the same `BADGE_SYNC_TOKEN` in both plugin and Bot `.env` files to use a dedicated role-sync credential instead of the Bot token fallback.
 
 # Start all services
 docker-compose up -d
@@ -146,10 +147,11 @@ handle {
 
 ### Plugin-Specific
 
-**encora-linking only:**
-- `BOT_TOKEN` — Discord bot token
-- `ENCORA_GUILD_ID` — Discord server ID
-- `ENCORA_LINKED_ROLE_ID` — Discord role ID
+**custom-badges and encora-linking:**
+- `BOT_TOKEN` — Fluxer Bot token; the badge plugin uses it to populate server and role selectors
+- `BADGE_SYNC_TOKEN` — optional dedicated role-sync credential; if omitted, Bot snapshots authenticate with the existing Bot token
+- `ENCORA_GUILD_ID` — Encora server ID (encora-linking)
+- `ENCORA_LINKED_ROLE_ID` — Encora linked-account role ID (encora-linking)
 
 **web-script-injector only:**
 - `UPSTREAM_URL` — App proxy address (default: `http://app-proxy:8080`)

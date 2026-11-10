@@ -14,6 +14,9 @@ services:
       PGUSER: fluxer
       PGPASSWORD: ${POSTGRES_PASSWORD}
       FLUXER_ADMIN_SECRET_KEY_BASE: ${FLUXER_ADMIN_SECRET_KEY_BASE}
+      API_URL: ${API_URL:-http://api:8080}
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      BADGE_SYNC_TOKEN: ${BADGE_SYNC_TOKEN:-}
     volumes:
       - ../../:/plugin  # mounts repo root; shared/ and plugins/ both accessible
     networks: [fluxer]

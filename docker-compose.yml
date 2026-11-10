@@ -16,6 +16,8 @@ services:
       API_URL: ${API_URL:-http://api:8080}
       CADDY_INTERNAL_URL: ${CADDY_INTERNAL_URL:-http://caddy:8088}
       FLUXER_DOMAIN: ${FLUXER_DOMAIN:-prelude.chat}
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      BADGE_SYNC_TOKEN: ${BADGE_SYNC_TOKEN:-}
     volumes:
       - ./:/plugin
     networks: [fluxer]

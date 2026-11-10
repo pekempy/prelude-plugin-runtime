@@ -7,10 +7,22 @@ const crypto = require('crypto');
 const { createPool } = require('../../shared/pg');
 const { checkAdminAuth, ADMIN_SECRET, ALLOWED_ADMIN_TOKENS } = require('../../shared/auth');
 const { readJsonBody, readRawBody, json } = require('../../shared/http');
+const {
+  addBadgeRoleLink,
+  ensureRoleLinkSchema,
+  fetchBotGuildRoles,
+  fetchBotGuilds,
+  getBadgeRoleLinks,
+  removeBadgeRoleLink,
+  syncMemberRoleSnapshot,
+} = require('./role-links');
+const { isBadgeSyncAuthorized, normalizeRoleSyncSnapshot } = require('./role-sync');
 
 const PORT = parseInt(process.env.PORT || '8081', 10);
 const SCRIPT_PATH = path.join(__dirname, 'encora-badges.js');
-const BOT_TOKEN = 'REDACTED_BOT_TOKEN';
+const BOT_TOKEN = process.env.BOT_TOKEN || '';
+const BADGE_SYNC_TOKEN = process.env.BADGE_SYNC_TOKEN || BOT_TOKEN;
+const BOT_API_URL = `${(process.env.CADDY_INTERNAL_URL || 'http://caddy:8088').replace(/\/+$/, '')}/api`;
 const ENCORA_GUILD_ID = '1518021155376594944';
 const ENCORA_LINKED_ROLE_ID = '1518032794880573443';
 
@@ -266,10 +278,11 @@ const server = http.createServer(async (req, res) => {
 
         // 1. Add/update badge in plugin_user_badges
         await pool.query(`
-          INSERT INTO plugin_user_badges (user_id, badge_id, custom_link)
-          VALUES ($1, 'encora_linked', $2)
+          INSERT INTO plugin_user_badges (user_id, badge_id, custom_link, role_managed)
+          VALUES ($1, 'encora_linked', $2, FALSE)
           ON CONFLICT (user_id, badge_id) DO UPDATE SET
-            custom_link = EXCLUDED.custom_link;
+            custom_link = EXCLUDED.custom_link,
+            role_managed = FALSE;
         `, [userIdStr, traderUrl]);
 
         await refreshBadgesCache(true);
@@ -662,12 +675,131 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pathname === '/admin/plugins/api/badges/role-sync' && req.method === 'POST') {
+    if (!BADGE_SYNC_TOKEN) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Badge role sync is not configured' }));
+      return;
+    }
+
+    if (!isBadgeSyncAuthorized(req.headers.authorization || '', BADGE_SYNC_TOKEN)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized' }));
+      return;
+    }
+
+    try {
+      const snapshot = normalizeRoleSyncSnapshot(await readJsonBody(req));
+      if (!snapshot) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid guild_id, user_id, or role_ids' }));
+        return;
+      }
+
+      const badgeIds = await syncMemberRoleSnapshot(pool, snapshot);
+      await refreshBadgesCache(true);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, badge_ids: badgeIds }));
+    } catch (err) {
+      console.error('[plugin-custom-badges] Role sync failed:', err.message);
+      res.writeHead(err.status || 500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.status ? err.message : 'Role sync failed' }));
+    }
+    return;
+  }
+
   // Admin authentication guard for all /admin/plugins/api/badges routes
   if (pathname.startsWith('/admin/plugins/api/badges') || pathname.startsWith('/admin/plugins/api/users')) {
     const session = checkAdminAuth(req);
     if (!session) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));
+      return;
+    }
+
+    if (pathname === '/admin/plugins/api/badges/guilds' && req.method === 'GET') {
+      try {
+        const guilds = await fetchBotGuilds(BOT_API_URL, BOT_TOKEN);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(guilds));
+      } catch (err) {
+        res.writeHead(err.status || 500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    const guildRolesMatch = pathname.match(/^\/admin\/plugins\/api\/badges\/guilds\/([^/]+)\/roles$/);
+    if (guildRolesMatch && req.method === 'GET') {
+      try {
+        const roles = await fetchBotGuildRoles(BOT_API_URL, BOT_TOKEN, decodeURIComponent(guildRolesMatch[1]));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(roles));
+      } catch (err) {
+        res.writeHead(err.status || 500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    const badgeRoleLinksMatch = pathname.match(/^\/admin\/plugins\/api\/badges\/([^/]+)\/role-links$/);
+    if (badgeRoleLinksMatch && req.method === 'GET') {
+      try {
+        const badgeId = decodeURIComponent(badgeRoleLinksMatch[1]);
+        const badge = await pool.query('SELECT id FROM plugin_custom_badges WHERE id = $1', [badgeId]);
+        if (!badge.rows.length) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Badge not found' }));
+          return;
+        }
+
+        const links = await getBadgeRoleLinks(pool, badgeId);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ links }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (badgeRoleLinksMatch && req.method === 'POST') {
+      try {
+        const badgeId = decodeURIComponent(badgeRoleLinksMatch[1]);
+        const body = await readJsonBody(req);
+        const link = await addBadgeRoleLink(pool, {
+          badgeId,
+          guildId: String(body.guild_id || ''),
+          roleId: String(body.role_id || ''),
+        }, { apiUrl: BOT_API_URL, botToken: BOT_TOKEN });
+
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, link }));
+      } catch (err) {
+        res.writeHead(err.status || 500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    const deleteBadgeRoleLinkMatch = pathname.match(/^\/admin\/plugins\/api\/badges\/([^/]+)\/role-links\/([^/]+)$/);
+    if (deleteBadgeRoleLinkMatch && req.method === 'DELETE') {
+      try {
+        const badgeId = decodeURIComponent(deleteBadgeRoleLinkMatch[1]);
+        const removed = await removeBadgeRoleLink(pool, badgeId, deleteBadgeRoleLinkMatch[2]);
+        if (! removed) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Linked role not found' }));
+          return;
+        }
+
+        await refreshBadgesCache(true);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+      } catch (err) {
+        res.writeHead(err.status || 500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
       return;
     }
 
@@ -716,7 +848,8 @@ const server = http.createServer(async (req, res) => {
             u.row_data->>'username' AS username,
             u.row_data->>'avatar' AS avatar,
             b.icon_url AS badge_url,
-            COALESCE(ub.custom_link, b.default_link) AS badge_link
+            COALESCE(ub.custom_link, b.default_link) AS badge_link,
+            ub.role_managed
           FROM plugin_user_badges ub
           JOIN plugin_custom_badges b ON ub.badge_id = b.id
           LEFT JOIN fluxer_kv u ON u.table_name = 'users' AND (u.partition_key::jsonb->>'value') = ub.user_id
@@ -788,12 +921,24 @@ const server = http.createServer(async (req, res) => {
         const badge = badgeRes.rows[0];
         const linkToSave = badge_link || badge.default_link || null;
 
-        await pool.query(`
-          INSERT INTO plugin_user_badges (user_id, badge_id, custom_link)
-          VALUES ($1, $2, $3)
-          ON CONFLICT (user_id, badge_id) DO UPDATE SET
-            custom_link = EXCLUDED.custom_link;
-        `, [user_id, badge_id, linkToSave]);
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [String(user_id)]);
+          await client.query(`
+            INSERT INTO plugin_user_badges (user_id, badge_id, custom_link, role_managed)
+            VALUES ($1, $2, $3, FALSE)
+            ON CONFLICT (user_id, badge_id) DO UPDATE SET
+              custom_link = EXCLUDED.custom_link,
+              role_managed = FALSE;
+          `, [user_id, badge_id, linkToSave]);
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw error;
+        } finally {
+          client.release();
+        }
 
         await refreshBadgesCache(true);
 
@@ -816,10 +961,37 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        await pool.query(`
-          DELETE FROM plugin_user_badges
-          WHERE user_id = $1 AND badge_id = $2;
-        `, [user_id, badge_id]);
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [String(user_id)]);
+          const roleAssignments = await client.query(`
+            SELECT 1
+            FROM plugin_user_badge_role_assignments AS assignment
+            JOIN plugin_badge_role_links AS link ON link.id = assignment.role_link_id
+            WHERE assignment.user_id = $1 AND link.badge_id = $2
+            LIMIT 1;
+          `, [user_id, badge_id]);
+
+          if (roleAssignments.rows.length) {
+            await client.query('ROLLBACK');
+            res.writeHead(409, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'This badge is currently assigned by a linked role' }));
+            return;
+          }
+
+          await client.query(`
+            DELETE FROM plugin_user_badges
+            WHERE user_id = $1 AND badge_id = $2;
+          `, [user_id, badge_id]);
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw error;
+        } finally {
+          client.release();
+        }
+
 
         await refreshBadgesCache(true);
 
@@ -872,9 +1044,18 @@ const server = http.createServer(async (req, res) => {
   res.end('Not Found');
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[plugin-custom-badges] listening on port ${PORT}`);
-});
+(async () => {
+  try {
+    await ensureRoleLinkSchema(pool);
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`[plugin-custom-badges] listening on port ${PORT}`);
+    });
+  } catch (err) {
+    console.error('[plugin-custom-badges] Failed to initialize role-link schema:', err.message);
+    await pool.end();
+    process.exitCode = 1;
+  }
+})();
 
 process.on('SIGTERM', async () => {
   console.log('[plugin-custom-badges] SIGTERM received, closing...');

@@ -102,6 +102,38 @@
               <span id="detail-badge-count" class="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700"></span>
             </div>
 
+            <!-- Linked roles -->
+            <section class="bg-white p-5 rounded-lg border border-neutral-200 shadow-sm space-y-4" aria-labelledby="linked-roles-heading">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <h4 id="linked-roles-heading" class="text-sm font-semibold text-neutral-900">Linked roles</h4>
+                  <p class="mt-1 text-xs text-neutral-500">Link one or more roles from a single server. The first link makes current assignments role-managed; members without a linked role lose the badge after their next role update.</p>
+                </div>
+                <span id="linked-role-count" class="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600">0 roles</span>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                <div class="md:col-span-5">
+                  <label for="linked-role-guild" class="block text-xs font-medium text-neutral-700 mb-1">Server</label>
+                  <select id="linked-role-guild" onchange="loadLinkedRoleChoices(this.value)" class="w-full min-h-[40px] rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" disabled>
+                    <option value="">Loading servers...</option>
+                  </select>
+                </div>
+                <div class="md:col-span-5">
+                  <label for="linked-role-select" class="block text-xs font-medium text-neutral-700 mb-1">Role</label>
+                  <select id="linked-role-select" onchange="updateLinkedRoleButton()" class="w-full min-h-[40px] rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" disabled>
+                    <option value="">Select a server first</option>
+                  </select>
+                </div>
+                <div class="md:col-span-2">
+                  <button id="linked-role-add" onclick="submitAddLinkedRole()" class="w-full min-h-[40px] rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50" disabled>Link role</button>
+                </div>
+              </div>
+              <p id="linked-role-status" class="text-xs text-neutral-500" aria-live="polite">Loading linked roles...</p>
+              <div id="linked-role-list" class="divide-y divide-neutral-100 rounded-md border border-neutral-200">
+                <p class="p-3 text-sm text-neutral-500">Loading linked roles...</p>
+              </div>
+            </section>
+
             <!-- Add User to this Badge Box -->
             <div class="bg-white p-5 rounded-lg border border-neutral-200 shadow-sm space-y-4">
               <h4 class="text-sm font-semibold uppercase tracking-wider text-neutral-700">Assign User to Badge</h4>
@@ -138,6 +170,7 @@
                       <th class="py-3 px-4">User</th>
                       <th class="py-3 px-4">User ID</th>
                       <th class="py-3 px-4">Badge Link</th>
+                      <th class="py-3 px-4">Assignment</th>
                       <th class="py-3 px-4 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -445,8 +478,166 @@
         document.getElementById('assign-link-input').value = badge.defaultLink || '';
 
         renderAssignedUsersTable(cachedAssignedUsers);
+        await loadBadgeRoleLinks(badgeId);
       } catch (err) {
         alert('Failed to load badge details: ' + err.message);
+      }
+    }
+
+    let linkedRoleLinks = [];
+
+    async function loadBadgeRoleLinks(badgeId) {
+      const guildSelect = document.getElementById('linked-role-guild');
+      const roleSelect = document.getElementById('linked-role-select');
+      const addButton = document.getElementById('linked-role-add');
+      const status = document.getElementById('linked-role-status');
+      const list = document.getElementById('linked-role-list');
+      guildSelect.disabled = true;
+      roleSelect.disabled = true;
+      addButton.disabled = true;
+      status.className = 'text-xs text-neutral-500';
+      status.textContent = 'Loading servers and linked roles...';
+      list.innerHTML = '<p class="p-3 text-sm text-neutral-500">Loading linked roles...</p>';
+
+      try {
+        const [guildsResponse, linksResponse] = await Promise.all([
+          fetch('/admin/plugins/api/badges/guilds'),
+          fetch(`/admin/plugins/api/badges/${encodeURIComponent(badgeId)}/role-links`),
+        ]);
+        if (!guildsResponse.ok || !linksResponse.ok) {
+          throw new Error('Could not load servers or linked roles');
+        }
+
+        const [guilds, linksData] = await Promise.all([guildsResponse.json(), linksResponse.json()]);
+        if (badgeId !== currentBadgeId) return;
+
+        guildSelect.innerHTML = '<option value="">Select a server...</option>' + guilds.map(guild =>
+          `<option value="${escapeHtml(guild.id)}">${escapeHtml(guild.name)}</option>`
+        ).join('');
+        const links = linksData.links || [];
+        linkedRoleLinks = links;
+        const linkedGuildId = links[0]?.guild_id || '';
+        if (linkedGuildId) guildSelect.value = linkedGuildId;
+        guildSelect.disabled = Boolean(linkedGuildId) || guilds.length === 0;
+        roleSelect.innerHTML = linkedGuildId ? '<option value="">Loading roles...</option>' : '<option value="">Select a server first</option>';
+        renderLinkedRoleRows(links);
+        status.textContent = guilds.length
+          ? 'The badge follows these roles once Bot role sync is configured.'
+          : 'The Bot is not currently available in any servers.';
+        if (linkedGuildId) await loadLinkedRoleChoices(linkedGuildId);
+      } catch (err) {
+        if (badgeId !== currentBadgeId) return;
+        guildSelect.innerHTML = '<option value="">Server list unavailable</option>';
+        roleSelect.innerHTML = '<option value="">Select a server first</option>';
+        status.textContent = `Could not load linked roles: ${err.message}`;
+        status.className = 'text-xs text-red-600';
+        list.innerHTML = '<p class="p-3 text-sm text-neutral-500">Role links could not be loaded.</p>';
+      }
+    }
+
+    async function loadLinkedRoleChoices(guildId) {
+      const roleSelect = document.getElementById('linked-role-select');
+      const addButton = document.getElementById('linked-role-add');
+      const status = document.getElementById('linked-role-status');
+      status.className = 'text-xs text-neutral-500';
+      roleSelect.disabled = true;
+      addButton.disabled = true;
+      roleSelect.innerHTML = '<option value="">Loading roles...</option>';
+      if (!guildId) {
+        roleSelect.innerHTML = '<option value="">Select a server first</option>';
+        return;
+      }
+
+      try {
+        const response = await fetch(`/admin/plugins/api/badges/guilds/${encodeURIComponent(guildId)}/roles`);
+        if (!response.ok) throw new Error('Could not load roles for this server');
+        const roles = await response.json();
+        const linkedRoleIds = new Set(linkedRoleLinks.map(link => String(link.role_id)));
+        const availableRoles = roles.filter(role => !linkedRoleIds.has(String(role.id)));
+        roleSelect.innerHTML = '<option value="">Select a role...</option>' + availableRoles.map(role =>
+          `<option value="${escapeHtml(role.id)}">${escapeHtml(role.name)}</option>`
+        ).join('');
+        roleSelect.disabled = availableRoles.length === 0;
+        if (!availableRoles.length) {
+          status.textContent = 'No unlinked roles are available for this server.';
+        }
+      } catch (err) {
+        roleSelect.innerHTML = '<option value="">Roles unavailable</option>';
+        status.textContent = err.message;
+        status.className = 'text-xs text-red-600';
+      }
+    }
+
+    function updateLinkedRoleButton() {
+      const guildId = document.getElementById('linked-role-guild').value;
+      const roleId = document.getElementById('linked-role-select').value;
+      document.getElementById('linked-role-add').disabled = !(guildId && roleId);
+    }
+
+    function renderLinkedRoleRows(links) {
+      const list = document.getElementById('linked-role-list');
+      document.getElementById('linked-role-count').textContent = `${links.length} ${links.length === 1 ? 'role' : 'roles'}`;
+      if (!links.length) {
+        list.innerHTML = '<p class="p-3 text-sm text-neutral-500">No linked roles. Assignments are currently manual.</p>';
+        return;
+      }
+
+      list.innerHTML = links.map(link => `
+        <div class="flex items-center justify-between gap-4 p-3">
+          <div class="min-w-0">
+            <p class="truncate text-sm font-medium text-neutral-900">${escapeHtml(link.role_name)} <span class="font-normal text-neutral-500">in ${escapeHtml(link.guild_name)}</span></p>
+            <p class="mt-0.5 font-mono text-xs text-neutral-400">${escapeHtml(link.role_id)} · ${escapeHtml(link.guild_id)}</p>
+          </div>
+          <button onclick="removeLinkedRole('${escapeHtml(link.id)}')" class="min-h-[40px] rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 hover:text-red-700">Unlink</button>
+        </div>
+      `).join('');
+    }
+
+    async function submitAddLinkedRole() {
+      const badgeId = currentBadgeId;
+      const guildId = document.getElementById('linked-role-guild').value;
+      const roleId = document.getElementById('linked-role-select').value;
+      const status = document.getElementById('linked-role-status');
+      const addButton = document.getElementById('linked-role-add');
+      if (!badgeId || !guildId || !roleId) return;
+
+      addButton.disabled = true;
+      status.className = 'text-xs text-neutral-500';
+      status.textContent = 'Linking role...';
+      try {
+        const response = await fetch(`/admin/plugins/api/badges/${encodeURIComponent(badgeId)}/role-links`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guild_id: guildId, role_id: roleId }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Could not link role');
+        await loadBadgeRoleLinks(badgeId);
+        status.textContent = 'Role linked. Existing members sync on their next role or membership event.';
+      } catch (err) {
+        status.className = 'text-xs text-red-600';
+        status.textContent = err.message;
+        addButton.disabled = false;
+      }
+    }
+
+    async function removeLinkedRole(linkId) {
+      const badgeId = currentBadgeId;
+      if (!badgeId || !confirm('Remove this linked role? Members who only had this role-linked badge will lose it.')) return;
+
+      const status = document.getElementById('linked-role-status');
+      status.className = 'text-xs text-neutral-500';
+      status.textContent = 'Removing role link...';
+      try {
+        const response = await fetch(`/admin/plugins/api/badges/${encodeURIComponent(badgeId)}/role-links/${encodeURIComponent(linkId)}`, {
+          method: 'DELETE',
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Could not remove role link');
+        await loadBadgeRoleLinks(badgeId);
+      } catch (err) {
+        status.className = 'text-xs text-red-600';
+        status.textContent = err.message;
       }
     }
 
@@ -488,7 +679,7 @@
     function renderAssignedUsersTable(users) {
       const tbody = document.getElementById('assigned-users-tbody');
       if (!users.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="p-8 text-center text-neutral-500">No users have been assigned this badge yet.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-neutral-500">No users have been assigned this badge yet.</td></tr>';
         return;
       }
 
@@ -508,8 +699,11 @@
           <td class="py-3 px-4 text-xs text-neutral-600">
             ${u.badge_link ? `<a href="${u.badge_link}" target="_blank" class="text-blue-600 hover:underline max-w-xs truncate block">${escapeHtml(u.badge_link)}</a>` : '<span class="text-neutral-400">Default</span>'}
           </td>
+          <td class="py-3 px-4">
+            ${u.role_managed ? '<span class="rounded bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">Linked role</span>' : '<span class="text-xs text-neutral-500">Manual</span>'}
+          </td>
           <td class="py-3 px-4 text-right">
-            <button onclick="removeUserFromBadge('${u.user_id}')" class="text-xs font-medium text-red-600 hover:text-red-800 hover:underline">Remove</button>
+            ${u.role_managed ? '<span class="text-xs text-neutral-400">Managed</span>' : `<button onclick="removeUserFromBadge('${u.user_id}')" class="text-xs font-medium text-red-600 hover:text-red-800 hover:underline">Remove</button>`}
           </td>
         </tr>
       `).join('');
